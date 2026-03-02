@@ -1,0 +1,8 @@
+baseURL = 'https://kphutt.com/'
+languageCode = 'en-us'
+title = 'Karsten Huttelmaier'
+
+[params]
+  description = 'Engineering leader in identity, security, and AI-assisted development.'
+  github = 'https://github.com/kphutt'
+  linkedin = 'https://www.linkedin.com/in/karstenhuttelmaier'

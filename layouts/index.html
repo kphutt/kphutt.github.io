@@ -1,0 +1,93 @@
+{{ define "main" }}
+<header>
+  <h1>Karsten Huttelmaier</h1>
+  <p class="tagline">Engineering leader in identity, security, and AI-assisted development.</p>
+  <p class="credentials">OIDC/OAuth 2.0 federation, service identity, PKI, cryptographic library compliance. 18 years. CISSP.</p>
+</header>
+
+<section id="thinking">
+  <h2>Thinking</h2>
+  <p class="note">Research co-authored with Claude.</p>
+  <ul>
+    <li>
+      <strong>The prompt engineering landscape</strong> &mdash; Surveyed 40+ systems including leaked production prompts from Cursor, Claude Code, and v0. The gap: nobody systematically evaluates prompt quality.
+      <a href="https://github.com/kphutt/prompt-lenses/blob/main/research/project1-landscape.md">read the survey</a>
+    </li>
+    <li>
+      <strong>The anatomy of excellent prompts</strong> &mdash; 8 structural elements converge across every production prompt studied.
+      <a href="https://github.com/kphutt/prompt-lenses/blob/main/research/project2-prompt-anatomy.md">read the framework</a>
+    </li>
+    <li>
+      <strong>Designing an observable email system</strong> &mdash; The real problem isn't filtering &mdash; it's taxonomy drift. Filters rot because nobody maintains them. This spec separates rule execution from rule evolution, making every decision auditable.
+      <a href="https://github.com/kphutt/inbox-shepherd/blob/master/docs/design/operator/requirements.md">read the spec</a>
+    </li>
+  </ul>
+</section>
+
+<section id="lenses">
+  <h2>Review Lenses</h2>
+  <p>Reviews fail when they trust the author's intent instead of the artifact's evidence. Each lens adopts a cognitive mode, not a checklist. Research complete &mdash; building the lenses now.</p>
+
+  <h3>Code</h3>
+  <ul class="lens-list">
+    <li><strong>The Adversary</strong> <span class="lens-desc">attack narratives</span></li>
+    <li><strong>The Newcomer</strong> <span class="lens-desc">comprehension traps</span></li>
+    <li><strong>The Time Traveler</strong> <span class="lens-desc">future rot</span></li>
+    <li><strong>The Operator</strong> <span class="lens-desc">3 AM readiness</span></li>
+    <li><strong>The Specification Lawyer</strong> <span class="lens-desc">promises vs. implementation</span></li>
+    <li><strong>The Deleter</strong> <span class="lens-desc">dead weight</span></li>
+    <li><strong>The Scientist</strong> <span class="lens-desc">evidentiary basis</span></li>
+    <li><strong>The Flow Analyst</strong> <span class="lens-desc">data lineage</span></li>
+  </ul>
+
+  <h3>Doc</h3>
+  <ul class="lens-list">
+    <li><strong>The Executive</strong> <span class="lens-desc">decision-readiness</span></li>
+    <li><strong>The Skeptic</strong> <span class="lens-desc">evidence gaps</span></li>
+    <li><strong>The Implementer</strong> <span class="lens-desc">execution-readiness</span></li>
+    <li><strong>The Outsider</strong> <span class="lens-desc">accessibility</span></li>
+    <li><strong>The Editor</strong> <span class="lens-desc">structural waste</span></li>
+    <li><strong>The Connector</strong> <span class="lens-desc">missing links</span></li>
+    <li><strong>The Consistency Checker</strong> <span class="lens-desc">internal contradictions</span></li>
+  </ul>
+</section>
+
+<section id="projects">
+  <h2>Projects</h2>
+  <ul>
+    <li>
+      <a href="https://github.com/kphutt/interview-prep"><strong>interview-prep</strong></a> &mdash;
+      Generates Staff-level interview prep for a technical domain. Deep-dive content, podcast episodes, coaching bot. Now making it domain-portable.
+    </li>
+    <li>
+      <a href="https://github.com/kphutt/identity-lab"><strong>identity-lab</strong></a> &mdash;
+      9 interactive simulations across the modern identity stack. Real crypto, real protocols, real failure modes.
+    </li>
+    <li>
+      <a href="https://github.com/kphutt/prompt-lenses"><strong>prompt-lenses</strong></a> &mdash;
+      The research and templates behind the lenses above.
+    </li>
+    <li>
+      <a href="https://github.com/kphutt/inbox-shepherd"><strong>inbox-shepherd</strong></a> &mdash;
+      The system described in the spec above. Classifies email, logs every decision, promotes patterns into rules. In dry-run validation.
+    </li>
+    <li>
+      <a href="https://github.com/kphutt/ai-toolkit"><strong>ai-toolkit</strong></a> &mdash;
+      Guardrails for AI-assisted development. Hooks that enforce standards instead of suggesting them.
+    </li>
+  </ul>
+</section>
+
+<section id="currently">
+  <h2>Currently</h2>
+  <ul>
+    <li>Building prompt-lenses core lenses</li>
+    <li>Making interview-prep domain-portable</li>
+    <li>Validating inbox-shepherd in dry-run</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Bellevue, WA &middot; <a href="https://github.com/kphutt">GitHub</a> &middot; <a href="https://www.linkedin.com/in/karstenhuttelmaier">LinkedIn</a></p>
+</footer>
+{{ end }}
