@@ -123,22 +123,6 @@ section > ul > li a {
   margin-bottom: 0.75rem;
 }
 
-.date {
-  font-weight: 400;
-  font-size: 0.875rem;
-  color: var(--fg-muted);
-}
-
-#currently ul li {
-  font-size: 0.9rem;
-  margin-bottom: 0.25rem;
-}
-
-#currently ul li::before {
-  content: "· ";
-  color: var(--fg-muted);
-}
-
 footer {
   margin-top: 3rem;
   padding-top: 1rem;
