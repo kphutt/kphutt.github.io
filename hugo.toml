@@ -1,8 +1,40 @@
-baseURL = 'https://kphutt.com/'
-languageCode = 'en-us'
-title = 'Karsten Huttelmaier'
+baseURL = "https://kphutt.com/"
+languageCode = "en-us"
+title = "Karsten Huttelmaier"
+theme = "PaperMod"
 
 [params]
-  description = 'Engineering leader in identity, security, and AI-assisted development.'
-  github = 'https://github.com/kphutt'
-  linkedin = 'https://www.linkedin.com/in/karstenhuttelmaier'
+  author = "Karsten Huttelmaier"
+  description = "Identity and security systems. Notes on what I find."
+  ShowReadingTime = false
+  ShowShareButtons = false
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = false
+  ShowCodeCopyButtons = true
+  defaultTheme = "light"
+  disableThemeToggle = true
+
+[params.label]
+  text = "kphutt.com"
+
+  [params.homeInfoParams]
+    # We're using content/_index.md instead of this
+    enabled = false
+
+  [params.profileMode]
+    enabled = false
+
+[menu]
+  [[menu.main]]
+    identifier = "notes"
+    name = "Notes"
+    url = "/notes/"
+    weight = 10
+
+[outputs]
+  home = ["HTML", "RSS"]
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
