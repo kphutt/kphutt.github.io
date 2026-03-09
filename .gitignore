@@ -1,15 +1,7 @@
-# Hugo build output
+# Hugo
 public/
 resources/
 .hugo_build.lock
-
-# Environment & secrets
-.env
-*.pem
-*.key
-
-# Logs
-debug.log
 
 # OS files
 .DS_Store
@@ -17,3 +9,11 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Logs
+debug.log
+
+# Environment & secrets
+.env
+*.pem
+*.key
