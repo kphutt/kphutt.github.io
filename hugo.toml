@@ -30,9 +30,9 @@ theme = "PaperMod"
 
 [menu]
   [[menu.main]]
-    identifier = "notes"
-    name = "Notes"
-    url = "/notes/"
+    identifier = "posts"
+    name = "Posts"
+    url = "/posts/"
     weight = 10
 
 [outputs]
