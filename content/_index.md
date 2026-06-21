@@ -41,7 +41,6 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 | [Inbox Shepherd](https://github.com/kphutt/inbox-shepherd) | Tame a noisy inbox by classifying email the way you would if you had time |
 | [Identity Lab](https://github.com/kphutt/identity-lab) | Learn identity protocols by running them, not reading about them |
 | [Text Adventure](https://github.com/kphutt/text-adventure-v2) | A dungeon crawler in Go, because not everything has to be serious |
-| [AI Toolkit](https://github.com/kphutt/ai-toolkit) | Guardrails that enforce standards instead of suggesting them |
 
 ---
 
