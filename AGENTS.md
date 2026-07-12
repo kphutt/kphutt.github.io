@@ -1,4 +1,4 @@
-# CLAUDE.md — kphutt.github.io
+# kphutt.github.io — contributor guide
 
 ## What This Is
 Personal website for Karsten Huttelmaier. Hugo static site deployed to GitHub Pages.
