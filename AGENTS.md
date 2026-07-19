@@ -1,5 +1,7 @@
 # kphutt.github.io — contributor guide
 
+> Cross-repo conventions (fleet-wide) live in `~/dev/AGENTS.md` — the sole authority for anything fleet-wide. This file holds only kphutt.github.io-specific guidance.
+
 ## What This Is
 Personal website for Karsten Huttelmaier. Hugo static site deployed to GitHub Pages.
 
