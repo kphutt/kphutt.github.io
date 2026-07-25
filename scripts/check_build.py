@@ -32,6 +32,10 @@ EXPECTED_FILES = {
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
+    # Referenced only from og:image and twitter:image, which are content= attributes, so
+    # the internal-reference check below cannot see it. Losing it means every link preview
+    # silently falls back to a bare URL.
+    "og-image.png": "link previews would lose their image",
 }
 
 
