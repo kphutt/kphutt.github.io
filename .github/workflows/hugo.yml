@@ -52,7 +52,46 @@ jobs:
             --gc \
             --minify
       - name: Check the built site
-        run: python3 scripts/check_build.py public
+        run: python3 scripts/check_build.py public | tee "${{ runner.temp }}/check.txt"
+
+      # The check output carries the diagnosis and, for a CSP hash mismatch, the exact
+      # replacement value. In a job log nobody reads it. The job summary renders on the
+      # run page and needs no permissions at all, which matters because Dependabot-
+      # triggered runs get a restricted token -- and Dependabot PRs are precisely the
+      # ones where this output is worth reading.
+      - name: Report the check result
+        if: always()
+        run: |
+          {
+            echo '### Build check'
+            echo
+            echo '```'
+            cat "${{ runner.temp }}/check.txt" 2>/dev/null || echo 'check did not run'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Everything above answers "is this shippable". This answers "what actually moved",
+      # which no pass/fail check can. A theme update once moved its typography rules onto
+      # a new class; the overridden homepage kept the old one and lost every margin, with
+      # byte-identical HTML and a green build. Report only -- it never fails the job.
+      - name: Check out the base branch, to compare against
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.base_ref }}
+          submodules: recursive
+          path: .base
+      - name: Report what this PR changes in the built site
+        if: github.event_name == 'pull_request'
+        env:
+          HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
+          HUGO_ENVIRONMENT: production
+          TZ: America/Los_Angeles
+        run: |
+          hugo --gc --minify -s .base -d public
+          python3 scripts/compare_builds.py .base/public public \
+            --title 'What this PR changes in the built site' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
