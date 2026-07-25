@@ -1,0 +1,53 @@
+{{- /*
+  Overrides the theme's llms.txt template.
+
+  The theme's version lists sections and their pages, which on this site produces little
+  more than a single link to one post -- it skips the home page, because Hugo treats it as
+  the list page rather than content. On this site the home page IS the content: the bio,
+  the writing on prompt pipelines and backcasting, and the project table all live there.
+  An index that omits it describes the wrong site.
+
+  So this adds two things to the theme's structure: the site description as the summary
+  line the llms.txt convention expects after the title, and an explicit link to the home
+  page. The recursive section printer below is the theme's, unchanged.
+*/ -}}
+
+{{- define "llms_print_section" -}}
+{{- $section := .section -}}
+{{- $depth := .depth -}}
+{{- if or (gt (len $section.RegularPages) 0) (gt (len $section.Sections) 0) -}}
+{{- $hashes := strings.Repeat (add $depth 1) "#" }}
+
+{{ printf "%s %s" $hashes $section.Title }}
+{{- range $p := $section.RegularPages }}
+  {{- if and (not $p.Params.searchHidden) (ne $p.Layout `archives`) (ne $p.Layout `search`) }}
+- [{{ $p.Title }}]({{ $p.Permalink }}){{ with $p.Description }}: {{ . }}{{ end }}
+  {{- end -}}
+{{- end -}}
+{{- range $s := $section.Sections -}}
+{{- template "llms_print_section" (dict "section" $s "depth" (add $depth 1)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* Main template */ -}}
+# {{ site.Title }}
+{{ with site.Params.description }}
+> {{ . }}
+{{ end }}
+## Home
+
+- [{{ site.Title }}]({{ site.Home.Permalink }}): background, and notes on prompt pipelines and backcasting.
+
+{{- $orphans := where site.RegularPages "Section" "" -}}
+{{ if gt (len $orphans) 0 }}
+{{- range $p := $orphans -}}
+  {{ if and (not $p.Params.searchHidden) (ne $p.Layout `archives`) (ne $p.Layout `search`) (not $p.IsHome) }}
+- [{{ $p.Title }}]({{ $p.Permalink }}){{ with $p.Description }}: {{ . }}{{ end }}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- range site.Sections -}}
+{{- template "llms_print_section" (dict "section" . "depth" 1) -}}
+{{- end }}

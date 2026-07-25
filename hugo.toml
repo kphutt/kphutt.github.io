@@ -38,8 +38,26 @@ theme = "PaperMod"
     url = "/posts/"
     weight = 10
 
+# Hugo renders layouts/robots.txt instead of the site having a static one, so the sitemap
+# URL in it is derived from baseURL above rather than written down a second time.
+enableRobotsTXT = true
+
+# llms.txt is a plain-text index of the site aimed at language models: a title, a short
+# summary, then links. The theme ships the output format and a template; this declares the
+# format and asks for it on the home page. layouts/_default/llms.txt overrides the theme's
+# version to add the summary and a link to the homepage itself.
+[outputFormats]
+  [outputFormats.llms]
+    mediaType = "text/plain"
+    baseName = "llms"
+    isPlainText = true
+    notAlternative = true
+
 [outputs]
-  home = ["HTML", "RSS"]
+  # "robots" must be listed explicitly. enableRobotsTXT alone only adds it to Hugo's
+  # DEFAULT home outputs, and declaring this list at all replaces those defaults -- so
+  # without it the setting is on, the template exists, and no robots.txt is produced.
+  home = ["HTML", "RSS", "llms", "robots"]
 
 [markup]
   [markup.goldmark]
