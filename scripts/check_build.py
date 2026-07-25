@@ -32,6 +32,36 @@ def expected_base_url() -> str:
     return match.group(1).rstrip("/")
 
 
+def resolve_ref(ref: str, base: str, root: Path, page: Path):
+    """Map a reference in the built HTML to the file it should resolve to.
+
+    Returns None for anything not checkable here: other sites, mailto/data/anchors, and
+    the RSS/sitemap URLs Hugo generates. External links are deliberately out of scope --
+    they break for reasons outside this repo and would make the build fail on someone
+    else's outage.
+    """
+    ref = ref.split("#", 1)[0].split("?", 1)[0].strip()
+    if not ref:
+        return None
+    if ref.startswith(("mailto:", "data:", "javascript:", "tel:", "//")):
+        return None
+
+    if ref.startswith(base):
+        ref = ref[len(base):] or "/"
+    elif re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", ref):
+        return None  # some other origin
+
+    if ref.startswith("/"):
+        target = root / ref.lstrip("/")
+    else:
+        target = page.parent / ref
+
+    # A directory URL is served by its index.html.
+    if ref.endswith("/") or (target.is_dir()):
+        target = target / "index.html"
+    return target
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "public")
     if not root.is_dir():
@@ -79,13 +109,34 @@ def main() -> int:
     elif cname.read_text(encoding="utf-8").strip() != host:
         failures.append(f"CNAME says {cname.read_text().strip()!r}, expected {host!r}")
 
+    # 4. Every internal reference must resolve to something in the build output.
+    #
+    # The theme's head partial links five icon files by default. None of them existed, so
+    # every page load fired five 404s and the site had no tab icon -- for months, silently,
+    # because a missing static file is not a build error. Anything the built HTML points at
+    # on this site should exist.
+    missing = {}
+    for path in sorted(root.rglob("*.html")):
+        html = path.read_text(encoding="utf-8", errors="replace")
+        page = path.relative_to(root).as_posix()
+        for ref in re.findall(r'(?:href|src)=["\']?([^"\'>\s]+)', html):
+            target = resolve_ref(ref, base, root, path)
+            if target is not None and not target.exists():
+                missing.setdefault(target.relative_to(root).as_posix(), set()).add(page)
+    if missing:
+        for target, pages in sorted(missing.items()):
+            shown = ", ".join(sorted(pages)[:3])
+            more = f" (+{len(pages) - 3} more)" if len(pages) > 3 else ""
+            failures.append(f"broken internal reference: {target} -- linked from {shown}{more}")
+
     if failures:
         print(f"Build check FAILED ({len(failures)} problem(s)):")
         for f in failures:
             print(f"  - {f}")
         return 1
 
-    print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact.")
+    print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
+    print("internal references all resolve.")
     return 0
 
 

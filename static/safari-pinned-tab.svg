@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Safari pinned-tab mask icon. Safari ignores any colour here and fills the shape with
+  the user's accent colour, so this must be a single solid black silhouette on a
+  transparent background, not a copy of the raster favicon.
+
+  This draws the keyhole itself rather than the field-with-a-hole used by the raster
+  icons. A pinned tab renders a small monochrome glyph, and a solid keyhole reads far
+  better at that size than a filled square with a gap in it would.
+
+  Geometry only, so there is no font dependency. See scripts/make_favicons.py.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <g fill="black">
+    <!-- the round bore -->
+    <circle cx="50" cy="38" r="19"/>
+    <!-- the tapered slot below it -->
+    <path d="M42 50 H58 L66 88 H34 Z"/>
+  </g>
+</svg>
