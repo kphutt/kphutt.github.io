@@ -10,19 +10,32 @@ version: 2
 # build check in ci and a human review before it reaches the live site.
 
 updates:
+  # Weekly, because these are small, mechanical, validated by the build check, and they
+  # are the supply-chain surface: a stale action is a real risk, not just untidiness.
+  # Grouped so four pinned actions produce one PR instead of up to four -- which also
+  # keeps clear of the five-open-PR limit, past which Dependabot silently stops opening
+  # new ones.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
     commit-message:
       prefix: "chore(actions)"
     labels:
       - dependencies
 
-  # The theme. Dependabot tracks the submodule's remote branch and opens a PR when it
-  # moves. Expect these to need attention rather than a rubber stamp: a theme bump can
-  # change the rendered HTML, and this repo pins inline script hashes in its Content
-  # Security Policy, so a changed script fails scripts/check_build.py by design.
+  # The theme. Dependabot tracks the submodule's remote branch, which moves constantly, so
+  # every run finds something -- weekly would produce a PR nearly every week.
+  #
+  # Monthly instead, for two reasons. These are NOT rubber stamps: one bump broke the CSP
+  # hash, the homepage typography and the twitter:description all at once, so each needs a
+  # real look at rendered output. And a cadence that outruns the review it needs gets
+  # batch-ignored, which is how the theme silently fell 50 commits behind in the first
+  # place. Monthly keeps each diff to roughly ten commits, which is still reviewable.
   - package-ecosystem: gitsubmodule
     directory: /
     schedule:
