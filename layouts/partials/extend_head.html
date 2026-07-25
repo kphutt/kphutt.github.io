@@ -18,3 +18,32 @@
   it -- worth stating explicitly so it does not depend on a default staying put.
 */ -}}
 <meta name="referrer" content="strict-origin-when-cross-origin">
+{{- /*
+  Content-Security-Policy. content-security-policy IS one of the accepted http-equiv
+  values, so unlike the headers named above this one genuinely works from the document.
+
+  The policy starts from default-src 'none' and allows only what the site actually uses.
+  That is realistic here because the site loads nothing from anywhere else: the stylesheet
+  is same-origin, the CSS contains no url(), no @import and no @font-face, and there are
+  no external scripts, images or fonts. The many outbound links in the content are <a>
+  links, which CSP does not govern.
+
+  The inline scripts are pinned by hash rather than allowed with 'unsafe-inline', which
+  would give up most of the point. Two remain, both from the theme's footer:
+
+    UBD9lf...  restores the nav menu's horizontal scroll position
+    X5avg4...  reveals the back-to-top arrow once you scroll past 800px
+
+  and one inline style, the rule inside <noscript> that hides those controls when
+  scripting is off.
+
+  A hash pins exact bytes, so a theme update that changes one character silently breaks
+  the script. scripts/check_build.py therefore recomputes every inline hash from the built
+  output and fails the build if one is missing from this policy. Do not edit these by hand
+  without running that check.
+
+  Two things cannot be done from a meta element and are deliberately absent rather than
+  written in and silently ignored: frame-ancestors (so no clickjacking protection) and
+  report-uri. Both need a real response header, which GitHub Pages cannot send.
+*/ -}}
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-UBD9lfFHKxagKGHh9S8B2hytN1cmDsFK1Tl1uedsZ0Q=' 'sha256-X5avg43RTxt2cSum+E3xICbowEMaOBxeBiNh05CXDTY='; style-src 'self' 'sha256-TzlBu+Yp5QndAbgUwjajid8QyFloMLEZVV3SLr0syao='; img-src 'self'; base-uri 'none'; form-action 'none'">

@@ -24,7 +24,11 @@ enableRobotsTXT = true
   ShowShareButtons = false
   ShowPostNavLinks = true
   ShowBreadCrumbs = false
-  ShowCodeCopyButtons = true
+  # Off because the site has no code blocks, so this only ever emitted an inline script
+  # that did nothing. Each inline script has to be pinned by hash in the Content Security
+  # Policy (see layouts/partials/extend_head.html), so dead ones are worth removing.
+  # Turning this back on will fail the build until its hash is added to the policy.
+  ShowCodeCopyButtons = false
   defaultTheme = "light"
   disableThemeToggle = true
 
