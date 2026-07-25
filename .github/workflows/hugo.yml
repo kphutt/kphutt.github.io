@@ -3,16 +3,19 @@ name: Deploy Hugo site to Pages
 on:
   push:
     branches: ["main"]
+  pull_request:
   workflow_dispatch:
 
+# Least privilege by default. Only the deploy job widens this for itself, so a build
+# triggered by a pull request never holds a token that can publish to Pages.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# Deploys to main serialise; pull request builds get their own lane per branch and
+# supersede themselves, so a PR build can never queue behind or delay a deploy.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "pages-${{ github.ref }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -33,9 +36,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v5
       - name: Build with Hugo
         env:
           HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
@@ -51,17 +51,24 @@ jobs:
           hugo \
             --gc \
             --minify
+      - name: Check the built site
+        run: python3 scripts/check_build.py public
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./public
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      pages: write
+      id-token: write
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
