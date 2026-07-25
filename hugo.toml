@@ -6,6 +6,13 @@ locale = "en-us"          # renamed from languageCode, deprecated in Hugo 0.158
 title = "Karsten Huttelmaier"
 theme = "PaperMod"
 
+# Root-level keys must stay above the first table header. A bare key written further down
+# belongs to whatever table precedes it -- this one previously sat below [[menu.main]] and
+# was silently parsed as menu.main[0].enableRobotsTXT, which means nothing to Hugo.
+# What actually produces robots.txt is "robots" in outputs.home below; this is the
+# documented companion switch, now in the right scope.
+enableRobotsTXT = true
+
 [module]
   [module.hugoVersion]
     min = "0.158.0"       # `locale` does not exist before this
@@ -31,16 +38,29 @@ theme = "PaperMod"
   [params.profileMode]
     enabled = false
 
+# Structured data for the home page. The theme reads both of these, so no template
+# override is needed.
+#
+# publisherType defaults to "Organization", which described this site incorrectly: it is
+# one person's site, not a company's. The type decides which schema.org entity search and
+# answer engines resolve the page to.
+#
+# sameAs is how an engine learns that this site, that GitHub account and that LinkedIn
+# profile are one entity rather than three. It was previously empty, so nothing connected
+# them. Only genuinely equivalent profiles belong here.
+[params.schema]
+  publisherType = "Person"
+  sameAs = [
+    "https://github.com/kphutt",
+    "https://linkedin.com/in/karstenhuttelmaier",
+  ]
+
 [menu]
   [[menu.main]]
     identifier = "posts"
     name = "Posts"
     url = "/posts/"
     weight = 10
-
-# Hugo renders layouts/robots.txt instead of the site having a static one, so the sitemap
-# URL in it is derived from baseURL above rather than written down a second time.
-enableRobotsTXT = true
 
 # llms.txt is a plain-text index of the site aimed at language models: a title, a short
 # summary, then links. The theme ships the output format and a template; this declares the
