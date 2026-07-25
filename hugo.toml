@@ -1,11 +1,14 @@
+# baseURL is the single source of truth for every absolute URL Hugo bakes into the
+# build: canonical tags, og:url, RSS item links and sitemap entries. The deploy workflow
+# deliberately does not pass --baseURL, which would override this.
 baseURL = "https://kphutt.com/"
-languageCode = "en-us"
+locale = "en-us"          # renamed from languageCode, deprecated in Hugo 0.158
 title = "Karsten Huttelmaier"
 theme = "PaperMod"
 
 [module]
   [module.hugoVersion]
-    min = "0.146.0"
+    min = "0.158.0"       # `locale` does not exist before this
 
 [params]
   author = "Karsten Huttelmaier"

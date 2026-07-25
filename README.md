@@ -12,4 +12,4 @@ Push to `main` triggers a GitHub Actions workflow that builds the site and deplo
 hugo server -D    # Start dev server with drafts enabled
 ```
 
-Requires Hugo extended v0.146.0+.
+Requires Hugo extended v0.158.0+.
