@@ -37,20 +37,45 @@ hugo              # Build to /public
 - `baseURL` in `hugo.toml` decides every absolute URL in the build. The workflow deliberately
   does not pass `--baseURL`; the comment there explains why.
 
-### Before switching the DNS proxy on
-Proxying puts a reverse proxy in front of Pages. Three things to settle first, or the site breaks:
-
-1. **Set SSL/TLS mode to Full (strict) first.** On Flexible the proxy fetches the origin over
-   plain HTTP, Pages redirects that to HTTPS because Enforce HTTPS is on, and the redirect
-   repeats forever — visitors get a redirect loop and the site is effectively down. Full (strict)
-   is fine because Pages presents a valid certificate for the domain.
-2. **Exempt `/.well-known/acme-challenge/*` from any Always Use HTTPS rule.** GitHub renews the
-   Pages certificate by serving a file at that path over plain HTTP. A proxy sitting in front of
-   it is the usual cause of renewal failures, and a failed renewal only takes HTTPS down when the
-   certificate expires — roughly 90 days after the change that caused it, long past the point
-   anyone connects the two.
-3. **Expect a second cache layer.** Pages already sends `Cache-Control: max-age=600`; the proxy
-   adds its own on top, so a deploy may not show up until that cache is purged.
-
 Proxied or not, the built URLs stay correct, because they come from `baseURL` rather than from
 whatever is answering at the edge.
+
+### Do not turn the DNS proxy on
+This was evaluated and rejected. The record is here so it does not get re-proposed.
+
+Putting a reverse proxy in front of Pages breaks GitHub's certificate renewal. DNS then resolves
+to the proxy rather than to GitHub, and the ACME challenge GitHub serves over plain HTTP on port
+80 gets intercepted. Renewal fails quietly — the existing certificate is still valid, so nothing
+looks wrong for weeks. When it expires, roughly 90 days later, an SSL mode of Full (strict) means
+the proxy validates the origin certificate, finds it expired, and refuses to connect at all. The
+site goes down, and recovery is to un-proxy manually and wait for GitHub to reissue.
+
+A 90-day fuse with a manual recovery step is the opposite of what this setup is for.
+
+Proxying would also silently remove the HTTPS redirect. Today `http://` reaches GitHub directly
+and Pages redirects it. Behind a proxy the origin leg is already HTTPS, so Pages never sees a
+plain-HTTP request and never redirects; the proxy would serve the page over HTTP unless its own
+Always Use HTTPS were enabled to take over the job.
+
+### Security headers: what is possible here, and what is not
+GitHub Pages cannot send HTTP response headers at all. This is a platform limitation with no
+configuration behind it, and the workarounds all amount to putting something else in front of
+the site — see above for why that is not happening.
+
+Two headers have genuine in-document equivalents and are set in
+`layouts/partials/extend_head.html`:
+- **Content-Security-Policy**, via `http-equiv`, pinning inline scripts by hash.
+- **Referrer-Policy**, via `<meta name="referrer">`.
+
+These cannot be set and are deliberately absent rather than faked: **HSTS**,
+**X-Content-Type-Options**, **X-Frame-Options**, **Permissions-Policy**, and CSP's
+`frame-ancestors` and `report-uri`. Setting any of them with `http-equiv` does nothing except
+make the source look secure. Do not add them.
+
+### Other settled decisions
+- **Cloudflare's "Manage your robots.txt" stays off.** This repo generates `robots.txt` from
+  `layouts/robots.txt`, under review. Letting Cloudflare manage it too would put two systems on
+  one file, and the reviewed one would lose.
+- **No CAA record, deliberately.** It would pin certificate issuance to one authority, which
+  couples the domain to GitHub's choice of CA with the same silent, delayed failure as above.
+  DNSSEC is enabled, which closes most of the path CAA would defend.
