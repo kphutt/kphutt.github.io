@@ -44,5 +44,5 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 
 ---
 
-[LinkedIn](https://linkedin.com/in/karstenhuttelmaier) ·
+[LinkedIn](https://www.linkedin.com/in/karstenhuttelmaier) ·
 [GitHub](https://github.com/kphutt)
