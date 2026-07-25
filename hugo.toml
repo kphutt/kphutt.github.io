@@ -71,6 +71,15 @@ enableRobotsTXT = true
 # format and asks for it on the home page. layouts/_default/llms.txt overrides the theme's
 # version to add the summary and a link to the homepage itself.
 [outputFormats]
+  # RFC 9116 wants this at /.well-known/security.txt, which `path` provides. Generated
+  # rather than static because its Expires field is mandatory and a fixed date would rot.
+  [outputFormats.security]
+    mediaType = "text/plain"
+    baseName = "security"
+    path = ".well-known"
+    isPlainText = true
+    notAlternative = true
+
   [outputFormats.llms]
     mediaType = "text/plain"
     baseName = "llms"
@@ -81,7 +90,7 @@ enableRobotsTXT = true
   # "robots" must be listed explicitly. enableRobotsTXT alone only adds it to Hugo's
   # DEFAULT home outputs, and declaring this list at all replaces those defaults -- so
   # without it the setting is on, the template exists, and no robots.txt is produced.
-  home = ["HTML", "RSS", "llms", "robots"]
+  home = ["HTML", "RSS", "llms", "robots", "security"]
 
 [markup]
   [markup.goldmark]

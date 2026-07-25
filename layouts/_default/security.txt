@@ -1,0 +1,23 @@
+{{- /*
+  RFC 9116 security.txt, published at /.well-known/security.txt.
+
+  Generated rather than dropped in static/ for one reason: RFC 9116 makes Expires a
+  REQUIRED field, and a hard-coded date silently rots. A file that has quietly expired is
+  worse than no file at all, because it still looks like the question was answered.
+  Computing it at build time means every deploy refreshes it, and this site deploys on
+  every push.
+
+  Contact goes to GitHub's private advisory form rather than an email address, so the repo
+  does not publish one to scrapers.
+*/ -}}
+# How to report a security problem with this site.
+#
+# This is a static Hugo build on GitHub Pages: no server-side code, no database, no
+# accounts, no forms. Realistic reports concern the published content, or the DNS and TLS
+# configuration, rather than an application vulnerability.
+
+Contact: https://github.com/kphutt/kphutt.github.io/security/advisories/new
+Contact: https://www.linkedin.com/in/karstenhuttelmaier
+Expires: {{ now.AddDate 1 0 0 | time.Format "2006-01-02T15:04:05Z07:00" }}
+Preferred-Languages: en
+Canonical: {{ "/.well-known/security.txt" | absURL }}

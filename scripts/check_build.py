@@ -32,6 +32,7 @@ EXPECTED_FILES = {
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
+    ".well-known/security.txt": "the documented way to report a problem would 404",
 }
 
 
