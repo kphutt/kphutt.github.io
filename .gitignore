@@ -3,6 +3,9 @@ public/
 resources/
 .hugo_build.lock
 
+# Base-branch checkout made by the PR comparison step in ci
+.base/
+
 # OS files
 .DS_Store
 Thumbs.db
