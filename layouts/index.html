@@ -3,7 +3,11 @@
   <header class="post-header">
     <h1 class="post-title">{{ .Title }}</h1>
   </header>
-  <div class="post-content">
+  {{/* Both classes are required. PaperMod moved its typography rules (heading sizes,
+       paragraph spacing) onto .md-content, while .post-content now carries only layout.
+       With post-content alone this page renders with zero margins on every paragraph and
+       heading. The theme's own list.html and single.html emit both. */}}
+  <div class="post-content md-content">
     {{ .Content }}
   </div>
 </article>

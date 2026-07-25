@@ -1,5 +1,8 @@
 ---
 title: "Karsten Huttelmaier"
+# Without this the theme falls back to summarising the page body, which produced a
+# 500-character twitter:description that link previews truncate mid-sentence.
+description: "Identity and security systems. Notes on what I find."
 ---
 
 I build identity and security systems like service identity, PKI, OAuth and OIDC. I wrote code for years, consulted on human identity systems, then worked on Applied Cryptography at AWS and identity infrastructure at Snowflake.

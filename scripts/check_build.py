@@ -217,7 +217,45 @@ def main() -> int:
             more = f" (+{len(pages) - 3} more)" if len(pages) > 3 else ""
             failures.append(f"broken internal reference: {target} -- linked from {shown}{more}")
 
-    # 6. Inline code must be pinned by hash in the Content Security Policy.
+    # 6. The homepage's content wrapper must carry the same classes as a post's.
+    #
+    # layouts/index.html is a local override; post pages render through the theme's own
+    # template. When the theme moved its typography rules from .post-content onto a new
+    # .md-content class, the theme's pages picked it up and the overridden homepage did
+    # not -- every paragraph and heading there silently lost its margins. The build was
+    # clean and the HTML was valid; only the rendering was wrong.
+    #
+    # Comparing the two rather than hardcoding class names means this keeps working when
+    # the theme renames something again: both sides move together, and only a genuine
+    # divergence between the override and the theme fails.
+    def wrapper_classes(page: Path):
+        if not page.is_file():
+            return None
+        found = re.search(
+            r'<div class=["\']?([^"\'>]*\bpost-content\b[^"\'>]*)["\']?[ >]',
+            page.read_text(encoding="utf-8", errors="replace"),
+        )
+        return set(found.group(1).split()) if found else None
+
+    home_classes = wrapper_classes(root / "index.html")
+    post_classes = wrapper_classes(root / "posts" / "brochure" / "index.html")
+    if home_classes is None:
+        failures.append("homepage has no post-content wrapper -- layouts/index.html may be broken")
+    elif post_classes and home_classes != post_classes:
+        missing = post_classes - home_classes
+        extra = home_classes - post_classes
+        detail = []
+        if missing:
+            detail.append(f"missing {sorted(missing)}")
+        if extra:
+            detail.append(f"unexpected {sorted(extra)}")
+        failures.append(
+            "homepage content wrapper does not match the theme's: "
+            + ", ".join(detail)
+            + " -- layouts/index.html has drifted from the theme template"
+        )
+
+    # 7. Inline code must be pinned by hash in the Content Security Policy.
     check_csp(root, failures)
 
     if failures:

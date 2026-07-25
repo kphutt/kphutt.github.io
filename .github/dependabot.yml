@@ -1,0 +1,33 @@
+version: 2
+
+# Why this exists: everything below had drifted badly before it was added. The three
+# GitHub Actions were one to three major versions behind, and the PaperMod submodule was
+# 50 commits behind upstream across a Hugo template restructure. Nothing surfaced any of
+# it -- a pinned version that is merely old produces no error, so it goes unnoticed until
+# someone thinks to look.
+#
+# Both ecosystems open PRs rather than pushing, so every bump still passes through the
+# build check in ci and a human review before it reaches the live site.
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(actions)"
+    labels:
+      - dependencies
+
+  # The theme. Dependabot tracks the submodule's remote branch and opens a PR when it
+  # moves. Expect these to need attention rather than a rubber stamp: a theme bump can
+  # change the rendered HTML, and this repo pins inline script hashes in its Content
+  # Security Policy, so a changed script fails scripts/check_build.py by design.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(theme)"
+    labels:
+      - dependencies
