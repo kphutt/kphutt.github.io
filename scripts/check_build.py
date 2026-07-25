@@ -23,6 +23,15 @@ CONFIG = Path(__file__).resolve().parent.parent / "hugo.toml"
 
 TEXT_SUFFIXES = {".html", ".xml", ".txt", ".json", ".css", ".js"}
 
+# Files the build is expected to publish, each with why it matters. All of these come from
+# configuration rather than from a file in content/, so losing one is silent.
+EXPECTED_FILES = {
+    "robots.txt": "crawler policy, including the AI training opt-out, would go unstated",
+    "llms.txt": "the plain-text index for language models would be gone",
+    "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
+    "index.xml": "the RSS feed anyone subscribed to would 404",
+}
+
 
 def expected_base_url() -> str:
     text = CONFIG.read_text(encoding="utf-8")
@@ -109,7 +118,20 @@ def main() -> int:
     elif cname.read_text(encoding="utf-8").strip() != host:
         failures.append(f"CNAME says {cname.read_text().strip()!r}, expected {host!r}")
 
-    # 4. Every internal reference must resolve to something in the build output.
+    # 4. Files the site is supposed to publish must actually be published.
+    #
+    # Every one of these is produced by configuration rather than by a source file, which
+    # is the failure this repo keeps hitting: the config reads correctly, Hugo reports no
+    # error, and the file simply is not there. robots.txt went missing exactly this way --
+    # enableRobotsTXT was set and the template existed, but declaring outputs.home had
+    # replaced the defaults that "robots" normally comes from.
+    #
+    # Nothing links these files, so the reference check below cannot catch them.
+    for name, why in EXPECTED_FILES.items():
+        if not (root / name).is_file():
+            failures.append(f"{name} missing from build output -- {why}")
+
+    # 5. Every internal reference must resolve to something in the build output.
     #
     # The theme's head partial links five icon files by default. None of them existed, so
     # every page load fired five 404s and the site had no tab icon -- for months, silently,
@@ -136,7 +158,7 @@ def main() -> int:
         return 1
 
     print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
-    print("internal references all resolve.")
+    print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve.")
     return 0
 
 
