@@ -9,8 +9,7 @@ which reads as an unfinished site.
 because some clients crop to a squarer aspect, and it is set large: most previews are
 rendered small, so anything subtle disappears.
 
-Deliberately matches the favicon -- same near-black, same keyhole -- so the tab icon and
-the link card look like the same site.
+Typography only, no symbol. See the comment in main() for why.
 
 Requires Pillow. Not part of the build: run it by hand when the design changes, and commit
 the output.
@@ -38,17 +37,28 @@ NAME = "Karsten Huttelmaier"
 TAGLINE = "Identity and security systems."
 DOMAIN = "kphutt.com"
 
+# Georgia, a serif.
+#
+# A serif at all because nearly every personal site in this field ships a sans-serif card,
+# so it reads as a considered choice rather than a default, and it suits a site that is
+# essays rather than a product.
+#
+# Georgia specifically, over Constantia which looks better at this size, because the same
+# face sets the favicon and Georgia was drawn for small on-screen sizes. Constantia's fine
+# serifs blurred into a smudge at 16px. One typeface across both needs no explaining, and
+# the difference at card size is marginal where the difference at favicon size is not.
+#
+# Fallbacks stay in the serif family, so the card degrades to another serif rather than to
+# something with a different voice.
 FONTS_BOLD = [
-    r"C:\Windows\Fonts\segoeuib.ttf",
-    r"C:\Windows\Fonts\arialbd.ttf",
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    r"C:\Windows\Fonts\georgiab.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
 ]
 FONTS_REG = [
-    r"C:\Windows\Fonts\segoeui.ttf",
-    r"C:\Windows\Fonts\arial.ttf",
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    r"C:\Windows\Fonts\georgia.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
 ]
 
 
@@ -59,40 +69,25 @@ def font(candidates, size):
     sys.exit("No suitable font found")
 
 
-def keyhole(draw, cx, cy, scale):
-    """The same mark as the favicon, drawn at an arbitrary size and position."""
-    bore_r = 34 * scale
-    draw.ellipse([cx - bore_r, cy - bore_r, cx + bore_r, cy + bore_r], fill=FG)
-    draw.polygon(
-        [
-            (cx - 12 * scale, cy + 22 * scale),
-            (cx + 12 * scale, cy + 22 * scale),
-            (cx + 15 * scale, cy + 74 * scale),
-            (cx - 15 * scale, cy + 74 * scale),
-        ],
-        fill=FG,
-    )
-
-
 def main() -> int:
     img = Image.new("RGB", (W, H), BG[:3])
     d = ImageDraw.Draw(img)
 
-    margin = 90
-    keyhole(d, margin + 46, 150, 1.0)
+    margin = 96
 
-    name_f = font(FONTS_BOLD, 76)
-    tag_f = font(FONTS_REG, 40)
+    # A plain rule above the name instead of a symbol. Every simple security glyph is
+    # taken -- lock, key, shield, keyhole -- and each attempt to simplify one drifted
+    # toward some other standard icon. A line carries no meaning to misread, and nobody
+    # owns it.
+    d.rectangle([margin, 196, margin + 132, 204], fill=FG)
+
+    name_f = font(FONTS_BOLD, 88)
+    tag_f = font(FONTS_REG, 44)
     dom_f = font(FONTS_REG, 32)
 
-    y = 300
-    d.text((margin, y), NAME, font=name_f, fill=FG)
-    y += 100
-    d.text((margin, y), TAGLINE, font=tag_f, fill=MUTED)
-
-    # A rule and the domain, bottom-left, so the card reads as belonging somewhere.
-    d.line([(margin, H - 118), (margin + 120, H - 118)], fill=MUTED, width=3)
-    d.text((margin, H - 100), DOMAIN, font=dom_f, fill=MUTED)
+    d.text((margin, 250), NAME, font=name_f, fill=FG)
+    d.text((margin, 372), TAGLINE, font=tag_f, fill=MUTED)
+    d.text((margin, H - 114), DOMAIN, font=dom_f, fill=MUTED)
 
     STATIC.mkdir(exist_ok=True)
     img.save(OUT, optimize=True)
