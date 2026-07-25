@@ -1,0 +1,20 @@
+{{- /*
+  PaperMod calls this partial from the end of its own head.html, so additions land in
+  every page's <head> without forking the theme's template.
+
+  Referrer-Policy, delivered in HTML. This is a standard mechanism from the Referrer
+  Policy spec, not a workaround -- note it is name="referrer", not http-equiv, and not
+  spelled the same as the HTTP header.
+
+  It exists here because GitHub Pages cannot set response headers at all. Most security
+  headers therefore cannot be delivered from this site: HSTS, X-Content-Type-Options,
+  X-Frame-Options and Permissions-Policy have no HTML equivalent, and faking them with
+  http-equiv does nothing except make the source look secure. Referrer-Policy is one of
+  the two that genuinely can be set in the document.
+
+  strict-origin-when-cross-origin: send the full URL within this site, send only the
+  origin to other sites, send nothing when going from HTTPS to HTTP. It matches what
+  current browsers already default to, so this pins the behaviour rather than changing
+  it -- worth stating explicitly so it does not depend on a default staying put.
+*/ -}}
+<meta name="referrer" content="strict-origin-when-cross-origin">
