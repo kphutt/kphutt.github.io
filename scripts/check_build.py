@@ -13,6 +13,8 @@ Run it against a build directory:
     python scripts/check_build.py public
 """
 
+import base64
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -39,6 +41,70 @@ def expected_base_url() -> str:
     if not match:
         sys.exit(f"FAIL: no baseURL found in {CONFIG}")
     return match.group(1).rstrip("/")
+
+
+def csp_hash(body: str) -> str:
+    """The CSP hash for an inline script or style: sha256 of its exact bytes, base64."""
+    digest = hashlib.sha256(body.encode("utf-8")).digest()
+    return "sha256-" + base64.b64encode(digest).decode("ascii")
+
+
+def check_csp(root: Path, failures: list) -> None:
+    """Every inline script and style must be pinned by hash in the page's own CSP.
+
+    The policy in layouts/partials/extend_head.html allows inline code by hash rather than
+    with 'unsafe-inline', which is the only way the policy is worth having. The cost is
+    that a hash pins exact bytes: a theme update that changes one character of the footer
+    script leaves a policy that no longer matches, the browser silently refuses to run it,
+    and nothing in the build complains.
+
+    So recompute the hashes from what was actually built and require each one to appear.
+    A silent breakage becomes a failed build.
+    """
+    for path in sorted(root.rglob("*.html")):
+        html = path.read_text(encoding="utf-8", errors="replace")
+        page = path.relative_to(root).as_posix()
+
+        inline_scripts = [
+            body for attrs, body in re.findall(r"<script([^>]*)>(.*?)</script>", html, re.S)
+            # JSON-LD is data, not executed, so script-src does not apply to it.
+            if "ld+json" not in attrs and body.strip()
+        ]
+        inline_styles = [
+            body for body in re.findall(r"<style[^>]*>(.*?)</style>", html, re.S) if body.strip()
+        ]
+        if not inline_scripts and not inline_styles:
+            continue  # e.g. Hugo's pagination alias stubs
+
+        # The policy value itself contains single quotes ('none', 'sha256-...'), so the
+        # capture must stop only at the closing double quote. Hugo minifies attributes and
+        # leaves http-equiv unquoted, hence the optional quotes around that name.
+        match = re.search(
+            r'<meta[^>]*http-equiv=["\']?Content-Security-Policy["\']?[^>]*?content="([^"]+)"',
+            html,
+            re.I,
+        )
+        if not match:
+            failures.append(f"{page} has inline code but no Content-Security-Policy")
+            continue
+        policy = match.group(1)
+
+        if "unsafe-inline" in policy:
+            failures.append(
+                f"{page} CSP contains 'unsafe-inline', which defeats hashing the inline code"
+            )
+
+        for label, bodies in (("script-src", inline_scripts), ("style-src", inline_styles)):
+            directive = re.search(rf"{label}([^;]*)", policy)
+            allowed = directive.group(1) if directive else ""
+            for body in bodies:
+                digest = csp_hash(body)
+                if digest not in allowed:
+                    snippet = " ".join(body.split())[:60]
+                    failures.append(
+                        f"{page}: inline {label.split('-')[0]} not allowed by CSP -- "
+                        f"add '{digest}' to {label} (starts: {snippet})"
+                    )
 
 
 def resolve_ref(ref: str, base: str, root: Path, page: Path):
@@ -151,6 +217,9 @@ def main() -> int:
             more = f" (+{len(pages) - 3} more)" if len(pages) > 3 else ""
             failures.append(f"broken internal reference: {target} -- linked from {shown}{more}")
 
+    # 6. Inline code must be pinned by hash in the Content Security Policy.
+    check_csp(root, failures)
+
     if failures:
         print(f"Build check FAILED ({len(failures)} problem(s)):")
         for f in failures:
@@ -158,7 +227,8 @@ def main() -> int:
         return 1
 
     print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
-    print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve.")
+    print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve,")
+    print("inline code pinned by hash in the CSP.")
     return 0
 
 
