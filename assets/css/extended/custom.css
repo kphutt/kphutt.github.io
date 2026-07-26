@@ -1,0 +1,30 @@
+/*
+  Site-specific CSS. PaperMod concatenates every file in css/extended/ onto the end of its
+  own stylesheet (see the theme's _partials/head.html), so this lands in the same
+  same-origin bundle the Content Security Policy already allows via style-src 'self'.
+  Nothing here is inline, so no new hash needs pinning in extend_head.html.
+
+  ---
+
+  Page background, made consistent between list pages and post pages.
+
+  PaperMod puts class="list" on the <body> of anything Hugo treats as a list kind -- the
+  home page and /posts/ here -- and its theme-vars.css paints that class with --code-bg,
+  a light grey. A single post is a "page" kind, gets no class, and so falls through to
+  --theme, which is pure white.
+
+  In dark mode the theme sets .list back to --theme, so both kinds already match and there
+  is nothing to fix. The split only shows up in light mode, which is the mode this site is
+  pinned to (defaultTheme = "light", disableThemeToggle = true in hugo.toml).
+
+  The effect was that clicking from the home page into a post visibly jumped from grey to
+  white, and the post read as bare, because neither page draws a card around its article --
+  the text sits directly on the background in both cases. Matching the two makes the site
+  one continuous surface.
+
+  Written as body:not(.list) rather than by overriding .list so the theme's own rule stays
+  untouched and only the page that was out of step is changed.
+*/
+body:not(.list) {
+    background: var(--code-bg);
+}
