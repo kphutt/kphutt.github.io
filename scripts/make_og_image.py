@@ -75,19 +75,24 @@ def main() -> int:
 
     margin = 96
 
-    # A plain rule above the name instead of a symbol. Every simple security glyph is
-    # taken -- lock, key, shield, keyhole -- and each attempt to simplify one drifted
-    # toward some other standard icon. A line carries no meaning to misread, and nobody
-    # owns it.
-    d.rectangle([margin, 196, margin + 132, 204], fill=FG)
+    # No mark. Every simple security glyph is taken -- lock, key, shield, keyhole -- and
+    # each attempt to simplify one landed on a different stock icon instead. The name is
+    # the only element here that nobody else has, so it carries the card alone.
+    #
+    # The block sits optically centred rather than dropped to the lower half. An earlier
+    # version kept the old composition and simply deleted the mark, which left an obvious
+    # hole in the top-left corner the mark had been holding.
+    name_f = font(FONTS_BOLD, 76)
+    tag_f = font(FONTS_REG, 40)
+    dom_f = font(FONTS_REG, 30)
 
-    name_f = font(FONTS_BOLD, 88)
-    tag_f = font(FONTS_REG, 44)
-    dom_f = font(FONTS_REG, 32)
+    d.text((margin, 232), NAME, font=name_f, fill=FG)
+    d.text((margin, 336), TAGLINE, font=tag_f, fill=MUTED)
 
-    d.text((margin, 250), NAME, font=name_f, fill=FG)
-    d.text((margin, 372), TAGLINE, font=tag_f, fill=MUTED)
-    d.text((margin, H - 114), DOMAIN, font=dom_f, fill=MUTED)
+    # The rule separates the domain from the rest, and is the same element used as the
+    # favicon -- so the tab and the preview share their one piece of furniture.
+    d.rectangle([margin, 410, margin + 110, 415], fill=MUTED)
+    d.text((margin, 430), DOMAIN, font=dom_f, fill=MUTED)
 
     STATIC.mkdir(exist_ok=True)
     img.save(OUT, optimize=True)

@@ -1,24 +1,3 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Safari pinned-tab mask icon. Safari ignores any colour here and fills the shape with
-  the user's accent colour, so this must be a single solid black silhouette on a
-  transparent background, not a copy of the raster favicon.
-
-  A lowercase k, matching the other icons. Drawn as plain geometry rather than as the
-  serif letterform the PNGs use: a pinned tab renders at roughly 16-20px in one flat
-  colour, where serifs and stroke contrast disappear entirely, and hand-tracing a serif
-  outline would add fragility for detail nobody can see. The silhouette is what reads.
-
-  Geometry only, so there is no font dependency. Verified by rasterising these exact
-  coordinates at pinned-tab size. See scripts/make_favicons.py for the raster icons.
--->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <g fill="black">
-    <!-- stem, full ascender height -->
-    <path d="M24 10 H41 V90 H24 Z"/>
-    <!-- upper arm, out to the top right -->
-    <path d="M41 66 L70 36 L86 36 L52 74 Z"/>
-    <!-- lower leg, out to the bottom right -->
-    <path d="M45 60 L58 52 L88 90 L70 90 Z"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect x="19.0" y="44.25" width="62.0" height="11.5" fill="black"/>
 </svg>
