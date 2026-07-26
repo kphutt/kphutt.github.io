@@ -1,0 +1,27 @@
+# Project toolchain pin (mise -- https://mise.jdx.dev). Cross-machine, no admin,
+# user-local cache.
+#
+# Install mise once per machine:
+#   macOS:   brew install mise
+#   Windows: winget install jdx.mise   (or: scoop install mise)
+#   Linux:   curl https://mise.run | sh
+#
+# Why this file exists: the local gate runs the same two commands as the CI build job,
+# and one of them -- scripts/check_build.py -- compares hashes of the theme's inline
+# scripts against the Content Security Policy in layouts/partials/extend_head.html.
+# Those hashes pin exact bytes, and different Hugo versions minify those scripts
+# differently. So an unpinned local Hugo does not merely risk drift, it makes the check
+# report failures on pages nobody touched.
+#
+# That is not hypothetical. This file was added after a local Hugo 0.157.0 (below the
+# min in hugo.toml, and well below CI) failed the check on all five built pages while
+# CI was green.
+#
+# hugo-extended, not hugo: the CI job installs hugo_extended, and the theme's SCSS
+# needs it.
+#
+# Keep this version and HUGO_VERSION in .github/workflows/hugo.yml in lockstep. They are
+# the same gate run in two places; if they disagree, the local half is worthless.
+
+[tools]
+hugo-extended = "0.164.0"

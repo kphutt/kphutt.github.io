@@ -9,8 +9,17 @@
 #
 # Where checks run, and why this repo has these: ai-toolkit/docs/where-checks-run.md
 
-# This repo has no test or lint suite to mirror, so the secret scan is the whole local gate --
-# which is also all the previous shared hook provided. Add hooks here if the repo gains a suite.
+# Two stages, matching where each check earns its cost:
+#
+#   pre-commit  gitleaks -- cheap, and a secret is worth catching before it exists in history.
+#   pre-push    the CI build gate -- the site builds in ~45ms, so running it before a push is
+#               free in practice, and a broken build never reaches GitHub.
+#
+# The pre-push hook mirrors the `build` job in .github/workflows/hugo.yml rather than
+# reimplementing it: scripts/local_verify.py runs that job's two commands verbatim. What it
+# adds is CI's preconditions -- the pinned Hugo from mise.toml, and a clean output directory,
+# because CI builds into a fresh checkout and a working tree does not. Both were real
+# failures; the script's docstring records them.
 
 repos:
   - repo: https://github.com/gitleaks/gitleaks
@@ -18,3 +27,13 @@ repos:
     hooks:
       - id: gitleaks
         stages: [pre-commit]
+
+  - repo: local
+    hooks:
+      - id: local-verify
+        name: build the site and check it (mirrors the CI build job)
+        entry: python scripts/local_verify.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

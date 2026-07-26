@@ -10,16 +10,39 @@ Personal website for Karsten Huttelmaier. Hugo static site deployed to GitHub Pa
 - Deployment: GitHub Actions on push to main
 
 ## Key Decisions
-- Single homepage does the heavy lifting; notes section grows by accretion
+- Single homepage does the heavy lifting; posts accrete under `content/posts/`
+  (there is no `notes/` section — an earlier one was removed, and stale `public/notes/`
+  output outlived it in working trees by four months)
 - PaperMod theme with custom homepage layout override (`layouts/index.html`)
 - No JavaScript required. No build tools beyond Hugo.
 - Content is markdown. Structure is in the content, not the theme.
 
 ## Commands
 ```bash
-hugo server -D    # Local dev server with drafts
-hugo              # Build to /public
+mise install                      # Install the pinned Hugo (once per machine/clone)
+mise exec -- hugo server -D       # Local dev server with drafts
+mise exec -- hugo                 # Build to /public
+python scripts/local_verify.py    # Run the CI build gate locally
 ```
+
+Hugo is pinned in `mise.toml` and must match `HUGO_VERSION` in the workflow. This is not
+housekeeping: `scripts/check_build.py` compares hashes of the theme's inline scripts against
+the CSP, hashes pin exact bytes, and Hugo versions minify differently — so the wrong Hugo
+fails the check on every page while CI is green.
+
+## Local checks
+`.pre-commit-config.yaml` runs gitleaks at commit and the CI build gate at push. Install once
+per clone, or there is no local gate at all and nothing says so:
+
+```bash
+python -m pre_commit install --hook-type pre-commit --hook-type pre-push
+```
+
+The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's two build commands
+verbatim and adds the preconditions CI gets from a fresh checkout: the pinned Hugo, and an
+empty output directory. `public/` is gitignored and Hugo does not purge files whose content is
+gone, so a working tree accumulates stale pages that fail the check locally and exist nowhere
+in CI.
 
 ## Adding Content
 - New post: create `content/posts/your-post.md` with front matter (title, date, description)
