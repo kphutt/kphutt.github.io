@@ -32,6 +32,11 @@ enableRobotsTXT = true
   defaultTheme = "light"
   disableThemeToggle = true
 
+  # The social preview card, used for og:image and twitter:image on every page. Without it
+  # link previews show a bare URL, and the theme falls back to the small "summary" twitter
+  # card instead of the large one. Regenerate with scripts/make_og_image.py.
+  images = ["og-image.png"]
+
 [params.label]
   text = "kphutt.com"
 
