@@ -28,18 +28,22 @@ updates:
     labels:
       - dependencies
 
-  # The theme. Dependabot tracks the submodule's remote branch, which moves constantly, so
-  # every run finds something -- weekly would produce a PR nearly every week.
+  # The theme. Weekly, which is a change of mind worth recording.
   #
-  # Monthly instead, for two reasons. These are NOT rubber stamps: one bump broke the CSP
-  # hash, the homepage typography and the twitter:description all at once, so each needs a
-  # real look at rendered output. And a cadence that outruns the review it needs gets
-  # batch-ignored, which is how the theme silently fell 50 commits behind in the first
-  # place. Monthly keeps each diff to roughly ten commits, which is still reviewable.
+  # It was monthly because a theme bump needs a real look at rendered output -- one broke
+  # the CSP hash, the homepage typography and the twitter:description at once -- and a
+  # cadence that outruns the review it needs gets batch-ignored.
+  #
+  # The comparison report added to ci changed that. A theme PR now arrives already saying
+  # which elements lost styling, which values drifted and whether an inline script's hash
+  # moved, so reviewing one is reading a summary rather than building it locally and
+  # squinting at a screenshot. With review cheap, smaller diffs win: two or three commits
+  # is far easier to reason about than ten when something does break. And the failure this
+  # is really guarding against is silent 50-commit drift, which is much worse than PR noise.
   - package-ecosystem: gitsubmodule
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     commit-message:
       prefix: "chore(theme)"
     labels:
