@@ -13,3 +13,5 @@ hugo server -D    # Start dev server with drafts enabled
 ```
 
 Requires Hugo extended v0.158.0+.
+
+<!-- litmus auto-fire probe 7e7e77b - safe to delete -->
