@@ -25,7 +25,7 @@ The Catalyst isn't one step. It's two stages: first, envision the ideal end stat
 
 That decomposition is the pattern. I used to keep asking the model to "make it better." Same prompt, another pass, hoping for improvement. That's retry logic. A pipeline is different: each step has its own specific purpose.
 
-I built a [pipeline for studying for security interviews](https://github.com/kphutt/interview-prep) the same way. One stage generates the study plan, one generates deep content per topic, one distills that content into documents for NotebookLM's audio conversion. Each stage jumped in quality once separated. The model that produces generic output on combined problems produces sharp output on isolated ones.
+I built a pipeline for studying for security interviews the same way. One stage generates the study plan, one generates deep content per topic, one distills that content into documents for NotebookLM's audio conversion. Each stage jumped in quality once separated. The model that produces generic output on combined problems produces sharp output on isolated ones.
 
 #### Finding What's Actually Wrong
 
@@ -39,7 +39,7 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 
 | Project | What it is |
 |---|---|
-| [Interview Prep](https://github.com/kphutt/interview-prep) | Turns a topic list into study materials, podcasts, and a coaching bot |
+| [gdmutant](https://github.com/kphutt/gdmutant) | Mutation testing for GDScript and Godot: find the bugs your green tests would miss |
 | [Prompt Lenses](https://github.com/kphutt/prompt-lenses) | Review any document or code from a specific cognitive perspective |
 | [Inbox Shepherd](https://github.com/kphutt/inbox-shepherd) | Tame a noisy inbox by classifying email the way you would if you had time |
 | [Identity Lab](https://github.com/kphutt/identity-lab) | Learn identity protocols by running them, not reading about them |
