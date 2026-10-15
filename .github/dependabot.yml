@@ -19,6 +19,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Release-age invariant: every release-age delay is 7 days.
+    # Dependabot won't propose an action release until it has been public for 7 days, so a
+    # compromised release is usually caught upstream first. Security updates skip it. The
+    # theme submodule below has none: it tracks upstream commits, which have no release age.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns:
