@@ -53,3 +53,12 @@ updates:
       prefix: "chore(theme)"
     labels:
       - dependencies
+
+  # .pre-commit-config.yaml pins its hooks (gitleaks and friends) to a release; this keeps
+  # those pins current. Every release-age delay is 7 days; security updates skip the cooldown.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
