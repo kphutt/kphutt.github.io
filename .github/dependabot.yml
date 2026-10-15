@@ -6,7 +6,7 @@ version: 2
 # it -- a pinned version that is merely old produces no error, so it goes unnoticed until
 # someone thinks to look.
 #
-# Both ecosystems open PRs rather than pushing, so every bump still passes through the
+# Every ecosystem opens PRs rather than pushing, so every bump still passes through the
 # build check in ci and a human review before it reaches the live site.
 
 updates:
@@ -51,5 +51,19 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(theme)"
+    labels:
+      - dependencies
+
+  # .pre-commit-config.yaml pins its hooks to a release; this keeps those pins current. Same
+  # 7-day release-age delay as github-actions. Dependabot has no security updates for
+  # pre-commit, so every hook bump waits the full cooldown.
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(hooks)"
     labels:
       - dependencies
