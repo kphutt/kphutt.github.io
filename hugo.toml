@@ -13,6 +13,12 @@ theme = "PaperMod"
 # documented companion switch, now in the right scope.
 enableRobotsTXT = true
 
+# content/LICENSE is the licence for the writing (CC BY 4.0). It sits beside the content it
+# covers so the licence travels with it, but it is not part of the site: without this,
+# Hugo copies it to /LICENSE in the build output. Matched against the full path, with
+# either separator, so it holds on Windows and Linux alike.
+ignoreFiles = ['[\\/]content[\\/]LICENSE$']
+
 [module]
   [module.hugoVersion]
     min = "0.158.0"       # `locale` does not exist before this
@@ -46,6 +52,12 @@ enableRobotsTXT = true
 
   [params.profileMode]
     enabled = false
+
+# The footer licence line. The writing in content/ is CC BY 4.0 (content/LICENSE) and the
+# code is Apache-2.0 (LICENSE). The theme renders this after its copyright line, through
+# markdownify, so the link is an ordinary outbound <a> and loads nothing.
+[params.footer]
+  text = "Writing licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)"
 
 # Structured data for the home page. The theme reads both of these, so no template
 # override is needed.
