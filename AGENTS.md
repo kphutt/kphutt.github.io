@@ -14,7 +14,7 @@ Personal website for Karsten Huttelmaier. Hugo static site deployed to GitHub Pa
   (there is no `notes/` section — an earlier one was removed, and stale `public/notes/`
   output outlived it in working trees by four months)
 - PaperMod theme with custom homepage layout override (`layouts/index.html`)
-- No JavaScript required. No build tools beyond Hugo.
+- No JavaScript at all, inline or otherwise. No build tools beyond Hugo.
 - Content is markdown. Structure is in the content, not the theme.
 
 ## Commands
@@ -25,10 +25,9 @@ mise exec -- hugo                 # Build to /public
 python scripts/local_verify.py    # Run the CI build gate locally
 ```
 
-Hugo is pinned in `mise.toml` and must match `HUGO_VERSION` in the workflow. This is not
-housekeeping: `scripts/check_build.py` compares hashes of the theme's inline scripts against
-the CSP, hashes pin exact bytes, and Hugo versions minify differently — so the wrong Hugo
-fails the check on every page while CI is green.
+Hugo is pinned in `mise.toml` and must match `HUGO_VERSION` in the workflow. They are the
+same gate run in two places: different Hugo versions render and minify differently, so a local
+build on the wrong version is not the build CI checked.
 
 ## Local checks
 `.pre-commit-config.yaml` runs gitleaks at commit and the CI build gate at push. Install once
@@ -87,7 +86,11 @@ the site — see above for why that is not happening.
 
 Two headers have genuine in-document equivalents and are set in
 `layouts/partials/extend_head.html`:
-- **Content-Security-Policy**, via `http-equiv`, pinning inline scripts by hash.
+- **Content-Security-Policy**, via `http-equiv`. It is `script-src 'none'` with no hashes and
+  no `'unsafe-inline'`, because the site has no inline code: `layouts/partials/head.html` and
+  `footer.html` are copies of the theme's with its inline scripts and style removed.
+  `scripts/check_build.py` fails the build if inline code comes back, if the policy loosens,
+  or if the theme changes a file those copies were made from.
 - **Referrer-Policy**, via `<meta name="referrer">`.
 
 These cannot be set and are deliberately absent rather than faked: **HSTS**,

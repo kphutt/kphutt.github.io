@@ -30,13 +30,17 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   ShowShareButtons = false
   ShowPostNavLinks = true
   ShowBreadCrumbs = false
-  # Off because the site has no code blocks, so this only ever emitted an inline script
-  # that did nothing. Each inline script has to be pinned by hash in the Content Security
-  # Policy (see layouts/partials/extend_head.html), so dead ones are worth removing.
-  # Turning this back on will fail the build until its hash is added to the policy.
+  # The site runs no JavaScript at all, and its Content Security Policy is script-src
+  # 'none'. Each of these switches would otherwise need a script: the code-copy button,
+  # the light/dark toggle, and the back-to-top link (which the theme reveals with a script
+  # on scroll, so without one it would always be on screen). layouts/partials/footer.html
+  # and head.html drop the theme's scripts entirely, so turning one of these back on gives
+  # a control that does nothing. scripts/check_build.py fails the build on any inline
+  # script.
   ShowCodeCopyButtons = false
   defaultTheme = "light"
   disableThemeToggle = true
+  disableScrollToTop = true
 
   # The social preview card, used for og:image and twitter:image on every page. Without it
   # link previews show a bare URL, and the theme falls back to the small "summary" twitter
@@ -101,6 +105,12 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   home = ["HTML", "RSS", "llms", "robots"]
 
 [markup]
+  # Syntax highlighting with CSS classes, not inline style= attributes. The default
+  # (noClasses = true) writes colours into every <span>, which the Content Security
+  # Policy's style-src 'self' blocks and scripts/check_build.py fails. The theme's
+  # stylesheet already carries the classes' colours.
+  [markup.highlight]
+    noClasses = false
   [markup.goldmark]
     [markup.goldmark.renderer]
       unsafe = true

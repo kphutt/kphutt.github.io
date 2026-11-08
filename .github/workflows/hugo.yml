@@ -54,8 +54,8 @@ jobs:
       - name: Check the built site
         run: python3 scripts/check_build.py public | tee "${{ runner.temp }}/check.txt"
 
-      # The check output carries the diagnosis and, for a CSP hash mismatch, the exact
-      # replacement value. In a job log nobody reads it. The job summary renders on the
+      # The check output carries the diagnosis: which page, which inline code or which
+      # weakened directive. In a job log nobody reads it. The job summary renders on the
       # run page and needs no permissions at all, which matters because Dependabot-
       # triggered runs get a restricted token -- and Dependabot PRs are precisely the
       # ones where this output is worth reading.

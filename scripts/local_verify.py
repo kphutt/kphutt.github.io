@@ -11,12 +11,11 @@ in .github/workflows/hugo.yml verbatim:
 What it does add is CI's *preconditions*, which a working tree does not have for free.
 Both of these were real failures, not theory:
 
-1. The right Hugo. scripts/check_build.py compares hashes of the theme's inline scripts
-   against the Content Security Policy in layouts/partials/extend_head.html. Hashes pin
-   exact bytes and Hugo versions minify differently, so the wrong Hugo fails the check on
-   every page while CI is green. A local 0.157.0 did exactly that. mise.toml pins the
-   version; this script refuses to run on anything else rather than emit failures that
-   look like site bugs.
+1. The right Hugo. Hugo versions render and minify differently, so the wrong Hugo
+   builds a site CI never builds. A local 0.157.0 once failed the check on every page
+   while CI was green (the check then compared hashes of inline scripts, which pin exact
+   bytes). mise.toml pins the version; this script refuses to run on anything else
+   rather than emit failures that look like site bugs.
 
 2. A clean output directory. CI builds into a fresh checkout. A working tree accumulates:
    public/ is gitignored, Hugo does not purge files that no longer correspond to any
@@ -77,8 +76,8 @@ def check_version(hugo: list[str], want: str) -> None:
     if got != want:
         fail(
             f"Hugo {got} is not the pinned {want}.\n"
-            f"  The CSP hash check compares exact bytes, so the wrong version reports\n"
-            f"  failures on pages you never touched. Install the pin with: mise install"
+            f"  A different Hugo builds a different site from the one CI checks, so its\n"
+            f"  results say nothing about CI's. Install the pin with: mise install"
         )
     print(f"hugo {got} (pinned)")
 
