@@ -8,6 +8,15 @@ Personal website for Karsten Huttelmaier. Hugo static site deployed to GitHub Pa
 - Homepage: `content/_index.md` (custom layout renders as content page, not post list)
 - Posts: `content/posts/` (individual markdown files, rendered as post list)
 - Deployment: GitHub Actions on push to main
+- Moving to Cloud Run (plan: `docs/design/site-move.md`). Until the cutover, GitHub Pages
+  serves kphutt.com and the Cloud Run deploy runs beside it:
+  - `server/sws.toml`: the static-web-server config, which holds every response header.
+    It is a security policy; `scripts/check_build.py` fails the build if it weakens.
+  - `Dockerfile`: the server image plus the checked build. Hugo does not run in it.
+  - `infra/`: the Google Cloud resources (OpenTofu). They are applied by hand; CI only
+    deploys images. See `infra/README.md`.
+  - `scripts/smoke.py`: run against a container or a Cloud Run candidate before it gets
+    traffic.
 
 ## Key Decisions
 - Single homepage does the heavy lifting; posts accrete under `content/posts/`
@@ -23,6 +32,8 @@ mise install                      # Install the pinned Hugo (once per machine/cl
 mise exec -- hugo server -D       # Local dev server with drafts
 mise exec -- hugo                 # Build to /public
 python scripts/local_verify.py    # Run the CI build gate locally
+python scripts/check_infra.py     # Check infra/ offline (fmt, validate, plan tests)
+python scripts/smoke.py URL       # Smoke-test a running copy (pages, feeds, headers)
 ```
 
 Hugo is pinned in `mise.toml` and must match `HUGO_VERSION` in the workflow. They are the

@@ -37,3 +37,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-push]
+
+      # infra/ offline checks, mirroring the `infra` job in the workflow. Only when a push
+      # touches infra/ or the pin, because initialising the providers takes a few seconds.
+      - id: check-infra
+        name: check infra/ offline (mirrors the CI infra job)
+        entry: python scripts/check_infra.py
+        language: system
+        pass_filenames: false
+        files: ^(infra/|mise\.toml$|scripts/(check_infra|move_live_tag)\.py$|\.github/workflows/)
+        stages: [pre-push]
