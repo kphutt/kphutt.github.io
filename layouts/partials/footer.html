@@ -1,0 +1,56 @@
+{{- /*
+  A copy of the theme's layouts/_partials/footer.html with every inline script taken out,
+  so the page can run with script-src 'none' and needs no hashes in its policy.
+
+  Removed, and nothing else changed: everything after the extend_footer partial, which is
+  four inline scripts -- restoring the nav menu's scroll position and smooth-scrolling to
+  in-page anchors, revealing the back-to-top link, the theme toggle, and the code-copy
+  buttons. In-page anchors still work without the script, they just jump instead of
+  scrolling smoothly. The back-to-top link is turned off in hugo.toml (disableScrollToTop),
+  because without a script it would always be visible.
+
+  scripts/check_build.py pins the theme file this was copied from, so a theme update that
+  changes it fails the build until this copy is re-synced.
+*/ -}}
+{{- if not (.Param "hideFooter") }}
+<footer class="footer">
+    {{- if not site.Params.footer.hideCopyright }}
+        {{- if site.Copyright }}
+        <span>{{ site.Copyright | markdownify }}</span>
+        {{- else }}
+        <span>&copy; {{ now.Year }} <a href="{{ "" | absLangURL }}">{{ site.Title }}</a></span>
+        {{- end }}
+        {{- print " · "}}
+    {{- end }}
+
+    {{- with site.Params.footer.text }}
+        {{ . | markdownify }}
+        {{- print " · "}}
+    {{- end }}
+
+    {{/*
+        - The "Powered by Hugo" text is intentionally left at the end of the footer to give it more prominence.
+        - We kindly encourage you to keep this line. Keeping this credit helps open source projects like PaperMod and Hugo reach more people, supports the open source ecosystem, and shows appreciation for the work that goes into these tools.
+        - If you choose to remove it, please consider adding a link to the PaperMod GitHub repository somewhere on your site to give credit to the project and its contributors.
+        - Support us by sponsoring the project on GitHub Sponsors: https://github.com/sponsors/adityatelange
+    */}}
+    
+    <span>
+        Powered by
+        <a href="https://gohugo.io/?utm_source=papermod" rel="noopener" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+{{- end }}
+
+{{- if (not site.Params.disableScrollToTop) }}
+<a href="#top" id="top-link" class="top-link hidden" aria-label="go to top" title="Go to Top (Alt + G)" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" class="feather feather-chevrons-up">
+        <polyline points="17 11 12 6 7 11"></polyline>
+        <polyline points="17 18 12 13 7 18"></polyline>
+    </svg>
+</a>
+{{- end }}
+
+{{- partial "extend_footer.html" . }}
