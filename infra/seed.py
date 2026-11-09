@@ -2,6 +2,7 @@
 """The one-time steps OpenTofu cannot do for itself, and the hand-off to GitHub.
 
     python infra/seed.py project   # create the project, link billing, enable APIs, state bucket
+    python infra/seed.py env       # create the `cloud-run` GitHub environment, main only
     python infra/seed.py vars      # after `tofu apply`: set the deploy workflow's repo variables
 
 Each prints the exact commands it would run and runs nothing. Add --apply to run them.
@@ -11,7 +12,8 @@ result already exists is reported and skipped.
 
 Why these are not in OpenTofu: the project and its billing link are what OpenTofu runs
 inside, the state bucket is where OpenTofu keeps its memory, and the APIs must be on
-before OpenTofu can call them. The repository variables live in GitHub, not GCP.
+before OpenTofu can call them. The environment and the repository variables live in
+GitHub, not GCP.
 """
 
 from __future__ import annotations
@@ -37,7 +39,13 @@ APIS = [
     "billingbudgets.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
+    "siteverification.googleapis.com",  # proving ownership of the test name (test-domain.tf)
 ]
+
+# The deploy jobs run in this environment, and the Google identity trusts only its tokens
+# (identities.tf). Only main may deploy to it.
+ENVIRONMENT = "cloud-run"
+DEPLOY_BRANCH = "main"
 
 
 def tfvars() -> dict:
@@ -106,6 +114,7 @@ def project(apply: bool) -> None:
     print(f'  tofu init -backend-config="bucket={pid}-tofu-state" -backend-config="prefix=site"')
     print("  tofu plan -out=site.tfplan")
     print("  tofu apply site.tfplan")
+    print("  python seed.py env --apply")
     print("  python seed.py vars --apply")
 
 
@@ -123,10 +132,44 @@ def variables(apply: bool) -> None:
         run([gh, "variable", "set", name, "--repo", repo, "--body", value], apply)
 
 
+def environment(apply: bool) -> None:
+    """Create or update the deploy environment so only main can deploy to it.
+
+    Idempotent: setting the policy is a PUT, the main rule is added only if missing, and any
+    other branch or tag rule is removed, so the result is the same however often it runs.
+    """
+    gh = tool("gh")
+    repo = tfvars()["github_repository"]
+    env = f"repos/{repo}/environments/{ENVIRONMENT}"
+    rules = f"{env}/deployment-branch-policies"
+
+    print(f"Environment {ENVIRONMENT} on {repo}, deployments from {DEPLOY_BRANCH} only:")
+    # Custom rules rather than "protected branches": the rule names main itself, so it does
+    # not widen if another branch is ever protected.
+    run([gh, "api", "--method", "PUT", env,
+         "-F", "deployment_branch_policy[protected_branches]=false",
+         "-F", "deployment_branch_policy[custom_branch_policies]=true"], apply)
+    add_main = [gh, "api", "--method", "POST", rules, "-f", f"name={DEPLOY_BRANCH}", "-f", "type=branch"]
+    if not apply:
+        run(add_main, apply)
+        print(f"  would remove: every branch or tag rule other than {DEPLOY_BRANCH}")
+        return
+    listed = subprocess.run([gh, "api", rules, "--paginate", "--jq", ".branch_policies[] | tojson"],
+                            capture_output=True, text=True, check=True).stdout
+    existing = [json.loads(line) for line in listed.splitlines() if line.strip()]
+    if any(r["name"] == DEPLOY_BRANCH and r.get("type", "branch") == "branch" for r in existing):
+        print(f"  already done, skipped: {' '.join(add_main)}")
+    else:
+        run(add_main, apply)
+    for r in existing:
+        if not (r["name"] == DEPLOY_BRANCH and r.get("type", "branch") == "branch"):
+            run([gh, "api", "--method", "DELETE", f"{rules}/{r['id']}"], apply)
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if a != "--apply"]
     apply = "--apply" in sys.argv[1:]
-    steps = {"project": project, "vars": variables}
+    steps = {"project": project, "env": environment, "vars": variables}
     if len(args) != 1 or args[0] not in steps:
         sys.exit(__doc__)
     if not apply:
