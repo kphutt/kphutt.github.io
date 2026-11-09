@@ -26,13 +26,13 @@ locals {
   # A DNS_CNAME token is "<record name> <target>". The name is put under the test name
   # whatever Google returns, so this record can never land on the apex or www.
   verification_parts = local.verify ? split(" ", trimspace(data.google_site_verification_token.test[0].token)) : []
-  verification_label = local.verify ? lower(trimsuffix(local.verification_parts[0], ".")) : ""
+  verification_label = local.verify && length(local.verification_parts) == 2 ? lower(trimsuffix(local.verification_parts[0], ".")) : ""
   verification_record_name = (
     endswith(local.verification_label, ".${var.test_hostname}")
     ? local.verification_label
     : "${local.verification_label}.${var.test_hostname}"
   )
-  verification_target = local.verify ? trimsuffix(local.verification_parts[1], ".") : ""
+  verification_target = local.verify && length(local.verification_parts) == 2 ? trimsuffix(local.verification_parts[1], ".") : ""
 }
 
 # The names a Cloudflare record may have. A precondition on each record calls this check.
@@ -124,7 +124,7 @@ resource "google_cloud_run_domain_mapping" "test" {
     # A subdomain mapping asks for exactly one CNAME. Anything else (A or AAAA records)
     # means the name is not what this file expects, so stop before DNS changes.
     postcondition {
-      condition     = length(self.status[0].resource_records) == 1 && self.status[0].resource_records[0].type == "CNAME"
+      condition     = try(length(self.status[0].resource_records) == 1 && self.status[0].resource_records[0].type == "CNAME", false)
       error_message = "The mapping asked for records other than one CNAME; this file only handles a subdomain."
     }
   }
@@ -137,7 +137,7 @@ resource "cloudflare_dns_record" "test" {
   zone_id = var.cloudflare_zone_id
   name    = var.test_hostname
   type    = "CNAME"
-  content = trimsuffix(google_cloud_run_domain_mapping.test[0].status[0].resource_records[0].rrdata, ".")
+  content = trimsuffix(try(google_cloud_run_domain_mapping.test[0].status[0].resource_records[0].rrdata, ""), ".")
   ttl     = 300
   proxied = false
   comment = "Test name for the Cloud Run move. Managed by OpenTofu."

@@ -90,7 +90,7 @@ Once, before turning it on:
    - Optional: an expiry date, and client IP filtering to your address.
 
    Keep it in the password manager and pass it to OpenTofu only as the environment
-   variable `CLOUDFLARE_API_TOKEN` (for example with `op run`). It never goes in
+   variable `CLOUDFLARE_API_TOKEN` (for example from a secrets manager at run time). It never goes in
    `terraform.tfvars` or the repository.
 2. Copy the zone id from the kphutt.com Overview page in Cloudflare into
    `cloudflare_zone_id` in `terraform.tfvars`. It is not a secret.

@@ -142,6 +142,9 @@ def variables(apply: bool) -> None:
 def environment(apply: bool) -> None:
     """Create or update the deploy environment so only main can deploy to it.
 
+    This owns the environment's whole config: the PUT sends only the branch policy, so a
+    setting added in the UI, such as required reviewers or a wait timer, is reset by a re-run.
+
     Idempotent: setting the policy is a PUT, the main rule is added only if missing, and any
     other branch or tag rule is removed, so the result is the same however often it runs.
     """
