@@ -1,7 +1,11 @@
 # Cutover runbook: kphutt.com from GitHub Pages to Cloud Run
 
-Steps 4 and 5 of [the plan](site-move.md). Every DNS change here is made by hand in the
-Cloudflare dashboard. Each step says how to undo it.
+Steps 4 and 5 of [the plan](site-move.md). Each step says how to undo it.
+
+Step 4 is code: OpenTofu creates the test name's mapping and DNS record
+(`infra/test-domain.tf`). The step 5 changes, to `kphutt.com` and `www`, are written below
+as changes in the Cloudflare dashboard. That code cannot touch those two names, by design;
+bringing the zone's existing records under OpenTofu is a separate change, made before step 5.
 
 Every `gcloud` command names its project and region explicitly. Set them once in the shell
 first, so a different default project can never receive a mapping:
@@ -32,18 +36,23 @@ rollback**, at any point. Do not touch the MX and TXT records: they are for mail
 Prerequisite: the infrastructure is applied and one deploy has run, so the service's
 `*.run.app` address serves the site (`python scripts/smoke.py <service_url>` passes).
 
-1. Verify ownership of `kphutt.com` with Google, once: `gcloud domains verify kphutt.com`
-   opens Search Console, which asks for a TXT record. Add it in Cloudflare. It does not
-   affect the site.
+1. Do the one-time setup in `infra/README.md`, "The test name": the Cloudflare token, the
+   zone id, and signing in with the Site Verification scope.
 2. Map the test name, option A in [the ADR](../decisions/0001-custom-domain-on-cloud-run.md):
+   set `test_domain_enabled = true` in `infra/terraform.tfvars`, then from `infra/`, with
+   `CLOUDFLARE_API_TOKEN` set:
    ```bash
-   gcloud beta run domain-mappings create --service site --domain next.kphutt.com --project "$PROJECT" --region "$REGION"
+   mise exec -- tofu plan -out=site.tfplan
+   mise exec -- tofu apply site.tfplan
    ```
-   Add the record it prints (a CNAME to `ghs.googlehosted.com`), DNS only. Wait for the
-   certificate (usually about 15 minutes, up to a day):
+   Read the plan first: it must add only records named `next.kphutt.com` and
+   `<token>.next.kphutt.com`, the ownership record and the mapping, and change nothing
+   else. The apply proves ownership of the test name, creates the mapping and adds its CNAME
+   to `ghs.googlehosted.com`, DNS only. Wait for the certificate (usually about 15 minutes,
+   up to a day):
    `gcloud beta run domain-mappings describe --domain next.kphutt.com --project "$PROJECT" --region "$REGION"`.
-   Undo: delete the CNAME and
-   `gcloud beta run domain-mappings delete --domain next.kphutt.com --project "$PROJECT" --region "$REGION"`.
+   Undo: set `test_domain_enabled = false`, plan and apply. That removes the CNAME, the
+   ownership CNAME and the mapping.
 3. Measure, and write the results into the ADR:
    - `python scripts/smoke.py https://next.kphutt.com`
    - `curl -sI` on `/`, `/posts/brochure/`, the stylesheet and a missing page
