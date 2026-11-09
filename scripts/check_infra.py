@@ -13,6 +13,11 @@ kphutt.com or www (the live site). Then the same four commands in both places:
 
 None of them touches Google Cloud: the backend is skipped and the tests mock the
 providers. Applying infra is done by hand (infra/README.md), never by a check.
+
+The commands run in a temporary copy of the git-tracked files of infra/, never in infra/
+itself. OpenTofu auto-loads terraform.tfvars and *.auto.tfvars, and the operator's git-ignored
+copy holds live settings, so in place the offline tests would run against live values (and fmt
+would judge an untracked file). CI has no such files; this makes every machine look like CI.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -38,11 +44,31 @@ def pinned() -> str:
 
 def tofu() -> list[str]:
     # CI installs the pinned version on PATH; a dev machine gets it through mise.
+    # The checks run in a temp dir outside the repo, where mise finds no mise.toml, so
+    # resolve the pinned binary from the repo and hand back its path.
     if shutil.which("mise"):
-        return ["mise", "exec", "--", "tofu"]
+        found = subprocess.run(["mise", "which", "tofu"], capture_output=True, text=True, cwd=REPO)
+        if found.returncode != 0 or not found.stdout.strip():
+            sys.exit(f"mise cannot find tofu (run `mise install`): {found.stderr.strip()}")
+        return [found.stdout.strip()]
     if shutil.which("tofu"):
         return ["tofu"]
     sys.exit("neither mise nor tofu is on PATH -- see mise.toml")
+
+
+def snapshot(dest: Path) -> Path:
+    """Copy the git-tracked files of infra/ into dest/infra and return that directory."""
+    out = subprocess.run(["git", "ls-files", "-z", "--", "infra"], capture_output=True, cwd=REPO)
+    if out.returncode != 0:
+        sys.exit(f"git ls-files failed: {out.stderr.decode(errors='replace')}")
+    names = [n for n in out.stdout.decode("utf-8").split("\0") if n]
+    if not names:
+        sys.exit("git ls-files found no tracked files under infra/")
+    for name in names:
+        target = dest / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / name, target)
+    return dest / "infra"
 
 
 # The deployer holds roles/artifactregistry.writer (infra/identities.tf): it can push and
@@ -218,11 +244,17 @@ def main() -> int:
     if not check_deployer_commands():
         print("\ninfra check FAILED: a deploy step uses a registry command the deployer cannot run", file=sys.stderr)
         return 1
-    if not check_cloudflare():
+    with tempfile.TemporaryDirectory(prefix="check-infra-") as tmp:
+        infra = snapshot(Path(tmp))
+        return run_infra(infra)
+
+
+def run_infra(infra: Path) -> int:
+    if not check_cloudflare(infra):
         print("\ninfra check FAILED: a Cloudflare resource could touch kphutt.com or www", file=sys.stderr)
         return 1
     cmd = tofu()
-    version = subprocess.run([*cmd, "version"], capture_output=True, text=True, cwd=INFRA).stdout
+    version = subprocess.run([*cmd, "version"], capture_output=True, text=True, cwd=infra).stdout
     want = pinned()
     if f"OpenTofu v{want}" not in version:
         sys.exit(f"OpenTofu is not the pinned {want}:\n{version}")
@@ -233,7 +265,7 @@ def main() -> int:
         ["test", "-no-color"],
     ):
         print(f"\n$ tofu {' '.join(step)}", flush=True)
-        if subprocess.run([*cmd, *step], cwd=INFRA).returncode != 0:
+        if subprocess.run([*cmd, *step], cwd=infra).returncode != 0:
             print(f"\ninfra check FAILED at: tofu {' '.join(step)}", file=sys.stderr)
             return 1
     print("\ninfra check passed")
