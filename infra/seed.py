@@ -98,7 +98,14 @@ def project(apply: bool) -> None:
     print(f"Project {pid}:")
     run([gcloud, "projects", "create", pid, "--name=Personal site"], apply,
         [gcloud, "projects", "describe", pid])
-    run([gcloud, "billing", "projects", "link", pid, f"--billing-account={billing}"], apply)
+    link = [gcloud, "billing", "projects", "link", pid, f"--billing-account={billing}"]
+    # Linking again fails even when the link already exists, so check the current account first.
+    linked = subprocess.run([gcloud, "billing", "projects", "describe", pid,
+                             "--format=value(billingAccountName)"], capture_output=True, text=True)
+    if apply and linked.returncode == 0 and linked.stdout.strip() == f"billingAccounts/{billing}":
+        print(f"  already done, skipped: {' '.join(link)}")
+    else:
+        run(link, apply)
     run([gcloud, "services", "enable", *APIS, f"--project={pid}"], apply)
 
     print(f"State bucket {bucket}:")
