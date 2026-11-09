@@ -74,3 +74,45 @@ variable "request_log_retention_days" {
   type        = number
   default     = 30
 }
+
+# The test name for the move (docs/design/cutover-runbook.md, step 4). Off by default, so the
+# base infrastructure can be applied without a Cloudflare token.
+variable "test_domain_enabled" {
+  description = "Map test_hostname to the service and create its DNS record at Cloudflare. Needs CLOUDFLARE_API_TOKEN."
+  type        = bool
+  default     = false
+}
+
+# The apex and www serve the live site. They must never be managed from here, so the name is
+# checked three times: this validation, a precondition on every DNS record (test-domain.tf)
+# and scripts/check_infra.py.
+variable "test_hostname" {
+  description = "The test name. A subdomain of kphutt.com; never kphutt.com itself or www."
+  type        = string
+  default     = "next.kphutt.com"
+
+  validation {
+    condition = (
+      can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+kphutt[.]com$", var.test_hostname))
+      && !contains(["kphutt.com", "www.kphutt.com"], var.test_hostname)
+    )
+    error_message = "test_hostname must be a lowercase subdomain of kphutt.com, and not kphutt.com or www.kphutt.com."
+  }
+}
+
+variable "cloudflare_zone_id" {
+  description = "The kphutt.com zone id, from the zone's Overview page in Cloudflare. Not a secret. Needed only when test_domain_enabled is true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cloudflare_zone_id == "" || can(regex("^[0-9a-f]{32}$", var.cloudflare_zone_id))
+    error_message = "cloudflare_zone_id must be the 32-character hex zone id."
+  }
+}
+
+variable "verify_test_hostname" {
+  description = "Prove ownership of test_hostname to Google from code (a CNAME under it). Set false if ownership of kphutt.com is already verified for the account running tofu."
+  type        = bool
+  default     = true
+}

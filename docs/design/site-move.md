@@ -96,15 +96,20 @@ Each step is its own pull request, through the normal gate.
    and update `AGENTS.md`. The required check stays `build`, so branch protection does not
    change.
 
-## Steps done by hand
+## Steps an owner runs
 
-These are one-time, need an account owner's credentials or a dashboard, and nothing in the
-repo does them on its own:
+Everything is set up from code, OpenTofu or `infra/seed.py`, even one-time steps. What a
+person does is run it with an owner's credentials, and the few things no code can do:
 
-- Create the GCP project, link billing, and run the first `tofu apply` with owner
-  credentials (it creates the identity CI deploys with).
-- Verify domain ownership for `kphutt.com` with Google (a DNS TXT record).
-- Every DNS change, the test subdomain included.
+- Run `infra/seed.py` (project, billing, APIs, state bucket; the `cloud-run` GitHub
+  environment; the repository variables) and the first `tofu apply`, signed in as an
+  owner. The apply creates the identity CI deploys with.
+- Sign in, and create the Cloudflare API token for the test name. The token stays in the
+  password manager and reaches OpenTofu only through the environment.
+- The test subdomain's DNS record, its domain mapping and the proof of ownership for it
+  are OpenTofu (`infra/test-domain.tf`), and cannot touch `kphutt.com` or `www`.
+- The DNS changes to `kphutt.com` and `www` at the cutover are still dashboard steps in the
+  runbook. Bringing the zone's existing records under OpenTofu is a separate change.
 - Turn off Cloudflare Web Analytics automatic injection for the zone, if it is on.
 - Remove the Pages workflow and disable Pages, after the cutover.
 

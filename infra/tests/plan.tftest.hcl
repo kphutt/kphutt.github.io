@@ -27,6 +27,9 @@ mock_provider "google" {
 
 mock_provider "google-beta" {}
 
+# test-domain.tf is off by default; mocked anyway so these tests can never reach Cloudflare.
+mock_provider "cloudflare" {}
+
 variables {
   project_id           = "test-site-project"
   region               = "us-west1"

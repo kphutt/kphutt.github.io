@@ -35,7 +35,8 @@ Free. Google issues and renews the certificate.
   (option E). That is a regression from today (constraint 3).
   Scanners such as SSL Labs cap the grade when 1.0 or 1.1 is offered.
 - The apex takes the A and AAAA records the mapping shows. Ownership must be verified with
-  Google once (a DNS TXT record).
+  Google once (a DNS TXT record). For the test, `infra/` proves ownership of the test name
+  alone, from code, with a CNAME under it (`infra/README.md`).
 - Renewal is Google's job end to end, and nothing sits in front to intercept it.
 
 ### B. Cloudflare proxy in front of a domain mapping
