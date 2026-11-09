@@ -107,7 +107,10 @@ Two headers have genuine in-document equivalents and are set in
 These cannot be set and are deliberately absent rather than faked: **HSTS**,
 **X-Content-Type-Options**, **X-Frame-Options**, **Permissions-Policy**, and CSP's
 `frame-ancestors` and `report-uri`. Setting any of them with `http-equiv` does nothing except
-make the source look secure. Do not add them.
+make the source look secure. Do not add them to the page.
+
+That rule is about the page. The Cloud Run server sends all of these except `report-uri` as
+real response headers, from `server/sws.toml`; those are not faked, and they stay.
 
 ### Other settled decisions
 - **Cloudflare's "Manage your robots.txt" stays off.** This repo generates `robots.txt` from
