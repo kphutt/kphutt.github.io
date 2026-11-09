@@ -65,6 +65,9 @@ def snapshot(dest: Path) -> Path:
     if not names:
         sys.exit("git ls-files found no tracked files under infra/")
     for name in names:
+        if not (REPO / name).exists():
+            sys.exit(f"{name} is tracked by git but missing from the working tree "
+                     "(deleted? stage the deletion)")
         target = dest / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO / name, target)
