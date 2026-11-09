@@ -97,7 +97,7 @@ MIN_HSTS_MAX_AGE = 31536000
 THEME = Path(__file__).resolve().parent.parent / "themes" / "PaperMod" / "layouts"
 OVERRIDDEN_THEME_FILES = {
     "_partials/head.html": "c7ef58590d6e4c755f1d2a575668095f3539475c61b39fdc12fd6e30025d30b0",
-    "_partials/footer.html": "fb7d633e44bb52842c06c60c5db3cb0d9cf9ac29becac59b3aa31bfcd4f15eae",
+    "_partials/footer.html": "94921247defd67d205aaa2358d96365664e75de4a30d44b0ed36c6635c738543",
 }
 
 
