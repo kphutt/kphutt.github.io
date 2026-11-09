@@ -1,7 +1,7 @@
 # Cutover runbook: kphutt.com from GitHub Pages to Cloud Run
 
 Steps 4 and 5 of [the plan](site-move.md). Every DNS change here is made by hand in the
-Cloudflare dashboard, by hand. Each step says how to undo it.
+Cloudflare dashboard. Each step says how to undo it.
 
 Every `gcloud` command names its project and region explicitly. Set them once in the shell
 first, so a different default project can never receive a mapping:
@@ -113,7 +113,8 @@ Once the new site has been stable:
    - remove the `deploy` job and the Pages artifact upload from `hugo.yml`;
    - remove the `CNAME` check from `scripts/check_build.py` and delete `static/CNAME`;
    - delete the in-page CSP meta tag in `layouts/partials/extend_head.html` (the header
-     replaces it), and drop `check_page_policy` from `scripts/check_build.py`, which then
+     replaces it), and drop the in-page policy check (`check_page_policy`, added with the
+     inline-code removal) from `scripts/check_build.py`, which then
      checks the header policy in `server/sws.toml` alone;
    - update the "Deployment, DNS and TLS" section of `AGENTS.md`.
 2. Then, outside the repo: disable GitHub Pages in the repository settings and delete the
