@@ -40,8 +40,8 @@ updates:
   # cadence that outruns the review it needs gets batch-ignored.
   #
   # The comparison report added to ci changed that. A theme PR now arrives already saying
-  # which elements lost styling, which values drifted and whether an inline script's hash
-  # moved, so reviewing one is reading a summary rather than building it locally and
+  # which elements lost styling, which values drifted and whether inline code came back,
+  # so reviewing one is reading a summary rather than building it locally and
   # squinting at a screenshot. With review cheap, smaller diffs win: two or three commits
   # is far easier to reason about than ten when something does break. And the failure this
   # is really guarding against is silent 50-commit drift, which is much worse than PR noise.
@@ -65,5 +65,32 @@ updates:
       default-days: 7
     commit-message:
       prefix: "chore(hooks)"
+    labels:
+      - dependencies
+
+  # The server image the Dockerfile pins by digest. Same 7-day release-age delay as the
+  # actions: a freshly pushed image waits a week before it is proposed.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(image)"
+    labels:
+      - dependencies
+
+  # The OpenTofu providers pinned in infra/versions.tf and infra/.terraform.lock.hcl. A
+  # provider bump changes what `tofu plan` proposes, so it gets the same review as any
+  # infra change, and is applied by hand like one.
+  - package-ecosystem: terraform
+    directory: /infra
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(infra)"
     labels:
       - dependencies

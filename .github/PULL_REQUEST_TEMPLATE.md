@@ -40,7 +40,7 @@ Blast radius, how to roll it back, what is deliberately deferred to a follow-up.
 
 ## Checklist
 
-<!-- CI builds the site and checks the CSP hashes. These are the things it cannot see. -->
+<!-- CI builds the site and checks it against the CSP. These are the things it cannot see. -->
 
 - [ ] Looked at the change in a browser, in both light and dark
 - [ ] No personal detail, internal status or private project name in public content

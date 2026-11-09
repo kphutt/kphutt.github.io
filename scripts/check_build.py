@@ -13,10 +13,10 @@ Run it against a build directory:
     python scripts/check_build.py public
 """
 
-import base64
 import hashlib
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 # Read the expected origin out of hugo.toml rather than hardcoding it, so this file does
@@ -40,6 +40,9 @@ EXPECTED_FILES = {
     # listed here too because losing it degrades silently to the raster fallback rather
     # than visibly breaking, which is exactly the kind of quiet regression that hides.
     "favicon.svg": "the sharp icon would silently fall back to the resampled raster",
+    # server/sws.toml serves it for every missing page. Without it the server falls back
+    # to a built-in page whose inline <style> the Content Security Policy blocks.
+    "404.html": "missing pages would get the server's built-in error page instead",
 }
 
 
@@ -51,68 +54,304 @@ def expected_base_url() -> str:
     return match.group(1).rstrip("/")
 
 
-def csp_hash(body: str) -> str:
-    """The CSP hash for an inline script or style: sha256 of its exact bytes, base64."""
-    digest = hashlib.sha256(body.encode("utf-8")).digest()
-    return "sha256-" + base64.b64encode(digest).decode("ascii")
+# The weakest Content Security Policy the site may ship. Each directive maps to the only
+# source expressions it may contain; a directive absent from the policy falls back to
+# default-src, which must be 'none'. The live policy may be stricter than this, never
+# looser, so loosening it -- 'unsafe-inline', a hash, a nonce, another origin, a wildcard,
+# a scheme like https: or data:, or default-src 'self' -- fails the build.
+POLICY_FLOOR = {
+    "default-src": {"'none'"},
+    "script-src": {"'none'"},
+    "style-src": {"'self'"},
+    "img-src": {"'self'"},
+    "object-src": {"'none'"},
+    "base-uri": {"'none'"},
+    "form-action": {"'none'"},
+    "frame-ancestors": {"'none'"},
+}
+
+# Directives that must be present explicitly. default-src does not cover these two, so
+# leaving them out would allow anything; script-src is listed so the intent is visible in
+# the policy itself rather than inherited.
+REQUIRED_DIRECTIVES = ("default-src", "script-src", "base-uri", "form-action")
+
+# The response headers the server sends, from its config. These are what a browser
+# enforces once the site is off GitHub Pages; the in-page policy above is a fallback.
+SERVER_CONFIG = Path(__file__).resolve().parent.parent / "server" / "sws.toml"
+
+# Headers the catch-all rule must set, and the values each may take.
+REQUIRED_SERVER_HEADERS = {
+    "X-Content-Type-Options": {"nosniff"},
+    "Referrer-Policy": {"strict-origin-when-cross-origin", "same-origin", "no-referrer", "strict-origin"},
+    "Cross-Origin-Opener-Policy": {"same-origin"},
+    "Cross-Origin-Resource-Policy": {"same-origin"},
+}
+
+# One year. HSTS shorter than this protects little and is what scanners flag.
+MIN_HSTS_MAX_AGE = 31536000
+
+# Theme templates this repo overrides with a modified copy, and the sha256 of the theme
+# file each copy was made from. A theme update that changes one of them fails the build,
+# so a fix upstream is never silently shadowed by a stale copy here. To re-sync: diff the
+# theme file against the copy, carry the change over, and update the hash.
+THEME = Path(__file__).resolve().parent.parent / "themes" / "PaperMod" / "layouts"
+OVERRIDDEN_THEME_FILES = {
+    "_partials/head.html": "c7ef58590d6e4c755f1d2a575668095f3539475c61b39fdc12fd6e30025d30b0",
+    "_partials/footer.html": "fb7d633e44bb52842c06c60c5db3cb0d9cf9ac29becac59b3aa31bfcd4f15eae",
+}
 
 
-def check_csp(root: Path, failures: list) -> None:
-    """Every inline script and style must be pinned by hash in the page's own CSP.
+# Directives that only ever restrict, so any value is acceptable. Every other directive
+# not in POLICY_FLOOR may only be 'none': an unlisted fetch directive such as
+# script-src-elem, connect-src or font-src at 'self' would loosen the default-src 'none'
+# fallback (script-src-elem 'self' even overrides script-src 'none' for <script>).
+# report-uri and report-to are deliberately not here: they send violation reports to a URL,
+# which is a request to wherever the policy names. They fall under the 'none'-only rule
+# like any other unlisted directive, so adding a reporting endpoint is a decision, not a
+# drive-by.
+RESTRICT_ONLY = {"sandbox", "upgrade-insecure-requests", "require-trusted-types-for", "trusted-types"}
 
-    The policy in layouts/partials/extend_head.html allows inline code by hash rather than
-    with 'unsafe-inline', which is the only way the policy is worth having. The cost is
-    that a hash pins exact bytes: a theme update that changes one character of the footer
-    script leaves a policy that no longer matches, the browser silently refuses to run it,
-    and nothing in the build complains.
 
-    So recompute the hashes from what was actually built and require each one to appear.
-    A silent breakage becomes a failed build.
+def parse_policy(policy: str) -> dict:
+    """Split a CSP string into {directive: [sources]} the way a browser does.
+
+    Browsers split on ASCII whitespace only, lowercase directive names, and keep the
+    first of a repeated directive. Python's str.split() would also split on a no-break
+    space, so a policy a browser reads as one unknown directive would look valid here;
+    hence the explicit separator.
     """
-    for path in sorted(root.rglob("*.html")):
+    parsed = {}
+    for part in policy.split(";"):
+        tokens = [tok for tok in re.split(r"[\t\n\f\r ]+", part) if tok]
+        if tokens:
+            parsed.setdefault(tokens[0].lower(), tokens[1:])
+    return parsed
+
+
+def policy_problems(policy: str, required=REQUIRED_DIRECTIVES) -> list:
+    """Every way `policy` is weaker than POLICY_FLOOR. An empty list means it holds."""
+    problems = []
+    if not policy.isascii() or any(ord(c) < 32 and c not in "\t\n\f\r" for c in policy):
+        problems.append("contains non-ASCII or control characters, which browsers do not treat as separators")
+    parsed = parse_policy(policy)
+    for name in required:
+        if name not in parsed:
+            problems.append(f"{name} is missing")
+    for name, sources in parsed.items():
+        if name in RESTRICT_ONLY:
+            continue
+        allowed = POLICY_FLOOR.get(name, {"'none'"})
+        extra = [s for s in sources if s.lower() not in allowed]
+        if extra:
+            problems.append(f"{name} allows {' '.join(extra)} (the floor is {' '.join(sorted(allowed))})")
+        if not sources:
+            problems.append(f"{name} has no value")
+    return problems
+
+
+# A JSON-LD block is data and never runs. Recognised by its exact type attribute, not by
+# the text "ld+json" appearing anywhere among the attributes.
+JSON_LD = re.compile(r"""(?:^|\s)type\s*=\s*["']?application/ld\+json["']?(?:\s|$)""", re.I)
+
+
+def check_inline_code(root: Path, failures: list) -> None:
+    """The built site must contain no code the policy would have to allow.
+
+    The policy is script-src 'none' with no 'unsafe-inline' and no hashes, which only
+    holds if the pages contain nothing that needs them. Inline code is exactly what a
+    theme update reintroduces without anyone noticing, so look for every form of it:
+    inline and external scripts, <style> elements, style= attributes, event-handler
+    attributes and javascript: URLs. JSON-LD is data, not executed, so it stays.
+    """
+    # SVG files are documents too: opened directly, one can carry script or handlers.
+    for path in sorted([*root.rglob("*.html"), *root.rglob("*.svg")]):
         html = path.read_text(encoding="utf-8", errors="replace")
         page = path.relative_to(root).as_posix()
 
-        inline_scripts = [
-            body for attrs, body in re.findall(r"<script([^>]*)>(.*?)</script>", html, re.S)
-            # JSON-LD is data, not executed, so script-src does not apply to it.
-            if "ld+json" not in attrs and body.strip()
-        ]
-        inline_styles = [
-            body for body in re.findall(r"<style[^>]*>(.*?)</style>", html, re.S) if body.strip()
-        ]
-        if not inline_scripts and not inline_styles:
-            continue  # e.g. Hugo's pagination alias stubs
+        for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script\s*>", html, re.S | re.I):
+            if JSON_LD.search(attrs):
+                continue
+            kind = "external script" if "src=" in attrs.lower() else "inline script"
+            snippet = " ".join((attrs + " " + body).split())[:60]
+            failures.append(f"{page}: {kind}, which script-src 'none' blocks (starts: {snippet})")
+        if re.search(r"<style[\s>]", html, re.I):
+            failures.append(f"{page}: inline <style> element -- move the CSS into a stylesheet file")
+        # An attribute can follow whitespace, a slash or a closing quote (<svg/onload=,
+        # <div class="a"style=), and may have spaces around its =.
+        if re.search(r"""<[^>]+[\s/"']style\s*=""", html, re.I):
+            failures.append(f"{page}: inline style= attribute -- move it into a stylesheet file")
+        handler = re.search(r"""<[^>]+[\s/"'](on[a-z]+)\s*=""", html, re.I)
+        if handler:
+            failures.append(f"{page}: event-handler attribute {handler.group(1)}= is inline script")
+        if re.search(r"""(?:href|src|action|formaction|data)\s*=\s*["']?\s*javascript:""", html, re.I):
+            failures.append(f"{page}: javascript: URL is inline script")
 
-        # The policy value itself contains single quotes ('none', 'sha256-...'), so the
-        # capture must stop only at the closing double quote. Hugo minifies attributes and
-        # leaves http-equiv unquoted, hence the optional quotes around that name.
+
+def check_page_policy(root: Path, failures: list) -> None:
+    """Every page must carry the in-page policy, and it must hold the floor."""
+    for path in sorted(root.rglob("*.html")):
+        html = path.read_text(encoding="utf-8", errors="replace")
+        page = path.relative_to(root).as_posix()
+        # Hugo's alias stubs (e.g. /posts/page/1/) are a meta refresh with no body. Only
+        # that shape is exempt; a real page that happens to refresh is still checked.
+        if re.search(r"http-equiv=[\"']?refresh", html, re.I) and not re.search(r"<body\b", html, re.I):
+            continue
+        # The policy value contains single quotes ('none', 'self'), so the capture stops
+        # only at the closing double quote. Hugo minifies attributes and leaves http-equiv
+        # unquoted, hence the optional quotes around that name.
         match = re.search(
             r'<meta[^>]*http-equiv=["\']?Content-Security-Policy["\']?[^>]*?content="([^"]+)"',
             html,
             re.I,
         )
         if not match:
-            failures.append(f"{page} has inline code but no Content-Security-Policy")
+            failures.append(f"{page} has no Content-Security-Policy")
             continue
-        policy = match.group(1)
+        for problem in policy_problems(match.group(1)):
+            failures.append(f"{page} in-page CSP is weaker than the floor: {problem}")
 
-        if "unsafe-inline" in policy:
+
+def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
+    """Nothing the browser fetches by itself may come from another origin.
+
+    Outbound <a> links are fine -- the visitor clicks them, the page does not load them.
+    Stylesheets, icons, preloads, images and CSS url()s are what the page loads, and the
+    policy only allows this site for those. Catch it here rather than as a silent console
+    error on the live site.
+    """
+    loads = []
+    for path in sorted(root.rglob("*.html")):
+        html = path.read_text(encoding="utf-8", errors="replace")
+        page = path.relative_to(root).as_posix()
+        for tag in re.findall(r"<link\b[^>]*>", html, re.I):
+            rel = re.search(r"""rel=["']?([^"'>]+?)["']?(?:\s|>|/)""", tag, re.I)
+            rel = rel.group(1).lower() if rel else ""
+            # alternate/canonical/etc are metadata, not loads.
+            if not any(r in rel.split() for r in ("stylesheet", "icon", "apple-touch-icon", "mask-icon", "preload", "prefetch", "manifest", "modulepreload")):
+                continue
+            href = re.search(r"""href=["']?([^"'>\s]+)""", tag, re.I)
+            if href:
+                loads.append((page, href.group(1)))
+        for src in re.findall(r"""<(?:img|source|iframe|embed|video|audio|track|input)\b[^>]*\ssrc\s*=\s*["']?([^"'>\s]+)""", html, re.I):
+            loads.append((page, src))
+        for url in re.findall(r"""<video\b[^>]*\sposter\s*=\s*["']?([^"'>\s]+)""", html, re.I):
+            loads.append((page, url))
+        for url in re.findall(r"""<object\b[^>]*\sdata\s*=\s*["']?([^"'>\s]+)""", html, re.I):
+            loads.append((page, url))
+        # srcset holds a comma-separated list of "URL width" candidates.
+        for srcset in re.findall(r"""\ssrcset\s*=\s*["']([^"']+)["']""", html, re.I):
+            for candidate in srcset.split(","):
+                if candidate.strip():
+                    loads.append((page, candidate.split()[0]))
+    for path in sorted(root.rglob("*.css")):
+        css = path.read_text(encoding="utf-8", errors="replace")
+        page = path.relative_to(root).as_posix()
+        if re.search(r"@import|@font-face", css, re.I):
+            failures.append(f"{page}: @import or @font-face -- the policy has no font-src and loads no other sheet")
+        for url in re.findall(r"url\(\s*['\"]?([^'\")]+)", css, re.I):
+            loads.append((page, url))
+    for page, url in loads:
+        if url.startswith("data:"):
+            failures.append(f"{page}: data: URL load {url[:40]} -- the policy does not allow data:")
+        elif url.startswith("//") or (re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", url) and not url.startswith(base + "/")):
+            failures.append(f"{page}: loads {url} from another origin")
+        elif url.startswith(base + "/"):
+            # Same site, but pinned to its production host name. On any other host (a test
+            # subdomain, a deploy candidate's own URL) that is another origin, so the
+            # policy blocks it there. Canonical and og: links are metadata and stay absolute.
+            failures.append(f"{page}: loads {url} by absolute URL -- use a relative one (relURL)")
+
+
+def check_server_headers(failures: list) -> None:
+    """The server config must send the full header set, with a policy at or above the floor.
+
+    This is the policy that matters once the site is served from the container: unlike
+    the in-page one, it covers frame-ancestors and applies to every response, including
+    feeds, images and the 404 page. Loosening it here fails the build just as loosening
+    the in-page policy does.
+    """
+    name = SERVER_CONFIG.relative_to(SERVER_CONFIG.parent.parent).as_posix()
+    try:
+        config = tomllib.loads(SERVER_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        failures.append(f"{name} could not be read: {e}")
+        return
+
+    general = config.get("general", {})
+    # The server's built-in versions of these would add HSTS with includeSubDomains and
+    # preload, and a one-year cache on files whose names never change.
+    for switch in ("security-headers", "cache-control-headers"):
+        if general.get(switch) is not False:
+            failures.append(f"{name}: {switch} must be false -- the explicit headers replace it")
+
+    rules = (config.get("advanced") or {}).get("headers") or []
+    catch_all = [r for r in rules if r.get("source") == "**"]
+    if not catch_all:
+        failures.append(f"{name}: no catch-all [[advanced.headers]] rule with source = \"**\"")
+        return
+    # HTTP header names are case-insensitive but TOML keys are not, so a second,
+    # differently-cased copy of a header could slip a weaker value past these checks.
+    # Compare lowercased, and refuse duplicates outright.
+    def lowered(rule):
+        out = {}
+        for key, value in rule.get("headers", {}).items():
+            if key.lower() in out:
+                failures.append(f"{name}: rule for {rule.get('source')!r} sets {key} twice (names differ only in case)")
+            out[key.lower()] = value
+        return out
+
+    headers = lowered(catch_all[0])
+
+    # A later rule replaces an earlier value, so only Cache-Control and Content-Type may be
+    # set by the narrower rules. Anything else there could silently weaken the catch-all.
+    for rule in rules:
+        if rule is catch_all[0]:
+            continue
+        for header in lowered(rule):
+            if header not in ("cache-control", "content-type"):
+                failures.append(
+                    f"{name}: rule for {rule.get('source')!r} sets {header}, which would "
+                    f"override the catch-all for those files"
+                )
+
+    policy = headers.get("content-security-policy")
+    if not policy:
+        failures.append(f"{name}: no Content-Security-Policy header")
+    else:
+        required = REQUIRED_DIRECTIVES + ("frame-ancestors", "object-src")
+        for problem in policy_problems(policy, required):
+            failures.append(f"{name}: Content-Security-Policy is weaker than the floor: {problem}")
+
+    hsts = headers.get("strict-transport-security", "")
+    max_age = re.search(r"max-age=(\d+)", hsts)
+    if not max_age or int(max_age.group(1)) < MIN_HSTS_MAX_AGE:
+        failures.append(f"{name}: Strict-Transport-Security max-age must be at least {MIN_HSTS_MAX_AGE}")
+    # Both are hard to undo and cover every subdomain, including ones served elsewhere.
+    # Adding either is a decision for the site's owner, so it fails here until this check
+    # is changed deliberately alongside it.
+    for flag in ("includesubdomains", "preload"):
+        if flag in hsts.lower():
+            failures.append(f"{name}: Strict-Transport-Security has {flag}, which needs an explicit decision")
+
+    for header, allowed in REQUIRED_SERVER_HEADERS.items():
+        if headers.get(header.lower()) not in allowed:
+            failures.append(f"{name}: {header} is {headers.get(header.lower())!r}, expected one of {sorted(allowed)}")
+    if not headers.get("permissions-policy"):
+        failures.append(f"{name}: no Permissions-Policy header")
+
+
+def check_theme_overrides(failures: list) -> None:
+    for name, pinned in OVERRIDDEN_THEME_FILES.items():
+        theme_file = THEME / name
+        if not theme_file.is_file():
+            failures.append(f"theme file {name} is gone, but layouts/ still overrides it")
+            continue
+        actual = hashlib.sha256(theme_file.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        if actual != pinned:
             failures.append(
-                f"{page} CSP contains 'unsafe-inline', which defeats hashing the inline code"
+                f"theme file {name} changed upstream (sha256 {actual}); re-sync the copy in "
+                f"layouts/partials/ and update OVERRIDDEN_THEME_FILES in this script"
             )
-
-        for label, bodies in (("script-src", inline_scripts), ("style-src", inline_styles)):
-            directive = re.search(rf"{label}([^;]*)", policy)
-            allowed = directive.group(1) if directive else ""
-            for body in bodies:
-                digest = csp_hash(body)
-                if digest not in allowed:
-                    snippet = " ".join(body.split())[:60]
-                    failures.append(
-                        f"{page}: inline {label.split('-')[0]} not allowed by CSP -- "
-                        f"add '{digest}' to {label} (starts: {snippet})"
-                    )
 
 
 def resolve_ref(ref: str, base: str, root: Path, page: Path):
@@ -263,8 +502,16 @@ def main() -> int:
             + " -- layouts/index.html has drifted from the theme template"
         )
 
-    # 7. Inline code must be pinned by hash in the Content Security Policy.
-    check_csp(root, failures)
+    # 7. No inline code, a policy that holds the floor, and nothing loaded from elsewhere.
+    check_inline_code(root, failures)
+    check_page_policy(root, failures)
+    check_no_outside_loads(root, base, failures)
+
+    # 8. The response headers the server will send hold the same floor, and more.
+    check_server_headers(failures)
+
+    # 9. The theme files overridden with modified copies have not moved upstream.
+    check_theme_overrides(failures)
 
     if failures:
         print(f"Build check FAILED ({len(failures)} problem(s)):")
@@ -274,7 +521,8 @@ def main() -> int:
 
     print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
     print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve,")
-    print("inline code pinned by hash in the CSP.")
+    print("no inline code, CSP at or above the floor in the page and in server/sws.toml,")
+    print("nothing loaded from another origin, theme overrides in sync.")
     return 0
 
 

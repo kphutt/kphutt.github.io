@@ -1,0 +1,4 @@
+# The image needs the built site and the server config. Nothing else is sent to the build.
+*
+!public/
+!server/sws.toml

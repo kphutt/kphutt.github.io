@@ -1,0 +1,21 @@
+# Copy to infra/terraform.tfvars (git-ignored) and fill in. See infra/README.md.
+
+project_id           = "kphutt-site"           # the site's own GCP project
+region               = "us-west1"              # us-west1 or us-central1
+github_repository    = "kphutt/kphutt.github.io"
+github_repository_id = "1170454764"            # gh api repos/kphutt/kphutt.github.io --jq .id
+billing_account      = "XXXXXX-XXXXXX-XXXXXX"  # gcloud billing accounts list
+alert_email          = "you@example.com"       # where budget alerts go
+
+# Optional
+# monthly_budget_usd         = 1
+# service_name               = "site"
+# max_instances              = 3
+# request_log_retention_days = 30
+
+# The test name (test-domain.tf). Off until you set it; needs CLOUDFLARE_API_TOKEN in the
+# environment (never in this file). See infra/README.md, "The test name".
+# test_domain_enabled  = true
+# cloudflare_zone_id   = "0123456789abcdef0123456789abcdef"  # kphutt.com zone Overview page; not a secret
+# test_hostname        = "next.kphutt.com"
+# verify_test_hostname = true
