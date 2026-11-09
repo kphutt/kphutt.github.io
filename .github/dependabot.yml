@@ -40,8 +40,8 @@ updates:
   # cadence that outruns the review it needs gets batch-ignored.
   #
   # The comparison report added to ci changed that. A theme PR now arrives already saying
-  # which elements lost styling, which values drifted and whether an inline script's hash
-  # moved, so reviewing one is reading a summary rather than building it locally and
+  # which elements lost styling, which values drifted and whether inline code came back,
+  # so reviewing one is reading a summary rather than building it locally and
   # squinting at a screenshot. With review cheap, smaller diffs win: two or three commits
   # is far easier to reason about than ten when something does break. And the failure this
   # is really guarding against is silent 50-commit drift, which is much worse than PR noise.

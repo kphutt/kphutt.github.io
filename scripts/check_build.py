@@ -85,8 +85,11 @@ OVERRIDDEN_THEME_FILES = {
 # not in POLICY_FLOOR may only be 'none': an unlisted fetch directive such as
 # script-src-elem, connect-src or font-src at 'self' would loosen the default-src 'none'
 # fallback (script-src-elem 'self' even overrides script-src 'none' for <script>).
-RESTRICT_ONLY = {"sandbox", "upgrade-insecure-requests", "report-to", "report-uri",
-                 "require-trusted-types-for", "trusted-types"}
+# report-uri and report-to are deliberately not here: they send violation reports to a URL,
+# which is a request to wherever the policy names. They fall under the 'none'-only rule
+# like any other unlisted directive, so adding a reporting endpoint is a decision, not a
+# drive-by.
+RESTRICT_ONLY = {"sandbox", "upgrade-insecure-requests", "require-trusted-types-for", "trusted-types"}
 
 
 def parse_policy(policy: str) -> dict:
