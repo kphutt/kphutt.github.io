@@ -17,6 +17,11 @@ terraform {
       source  = "hashicorp/google-beta"
       version = "~> 8.9.0"
     }
+    # DNS for the test name only (test-domain.tf). No existing record is imported or managed.
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.28.0"
+    }
   }
 
   backend "gcs" {}
@@ -38,3 +43,8 @@ provider "google-beta" {
   user_project_override = true
   billing_project       = var.project_id
 }
+
+# The API token comes from the CLOUDFLARE_API_TOKEN environment variable, never from a file
+# in the repository or from terraform.tfvars. infra/README.md lists the permissions it needs.
+# With test_domain_enabled = false there are no Cloudflare resources, and no token is needed.
+provider "cloudflare" {}

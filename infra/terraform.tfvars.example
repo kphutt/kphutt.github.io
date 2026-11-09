@@ -12,3 +12,10 @@ alert_email          = "you@example.com"       # where budget alerts go
 # service_name               = "site"
 # max_instances              = 3
 # request_log_retention_days = 30
+
+# The test name (test-domain.tf). Off until you set it; needs CLOUDFLARE_API_TOKEN in the
+# environment (never in this file). See infra/README.md, "The test name".
+# test_domain_enabled  = true
+# cloudflare_zone_id   = "0123456789abcdef0123456789abcdef"  # kphutt.com zone Overview page; not a secret
+# test_hostname        = "next.kphutt.com"
+# verify_test_hostname = true
