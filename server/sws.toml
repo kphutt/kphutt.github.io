@@ -1,0 +1,101 @@
+# static-web-server configuration for the container that serves the site on Cloud Run.
+# https://static-web-server.net -- v2, the stable line. The Dockerfile pins the exact image.
+#
+# The server only reads files. Hugo built them into the image at build time, so nothing
+# here runs per request except picking a file and attaching headers.
+#
+# THE SECURITY HEADERS BELOW ARE A POLICY, NOT TUNING. scripts/check_build.py reads this
+# file and fails the build if the Content-Security-Policy is weaker than its floor on any
+# directive, if HSTS gains includeSubDomains or preload, or if a required header goes
+# missing. scripts/smoke.py checks a running server sends exactly these values.
+
+[general]
+host = "0.0.0.0"
+port = 8080
+root = "/public"
+
+# Cloud Run already writes a request log line for every request (status, path, referrer,
+# user agent, latency), so the server's own log would only store each request twice.
+log-level = "warn"
+
+# The 404 page Hugo builds. It gets the same headers as every other response. A relative
+# path is resolved against root, so this is /public/404.html in the container. If it were
+# missing, the server would fall back to its built-in page, whose inline <style> the CSP
+# blocks; scripts/check_build.py requires 404.html and scripts/smoke.py checks it is this
+# site's page that comes back.
+page404 = "404.html"
+
+# Off: these are replaced by the explicit headers below. The built-in security headers
+# would send HSTS with includeSubDomains and preload, which this site deliberately does
+# not, and a weaker CSP. The built-in cache rules key on file extension alone, so a
+# favicon or og-image.png would be cached for a year even though their names never change.
+security-headers = false
+cache-control-headers = false
+
+compression = true
+directory-listing = false
+ignore-hidden-files = true
+disable-symlinks = true
+
+# Hugo's URLs end in a slash, and GitHub Pages redirects /posts to /posts/. Keep that.
+redirect-trailing-slash = true
+index-files = "index.html"
+
+[advanced]
+
+# www.kphutt.com redirects to the apex, path and query kept, as it does on GitHub Pages.
+# Only reached if www is pointed at this service (docs/design/cutover-runbook.md).
+[[advanced.redirects]]
+host = "www.kphutt.com"
+source = "/{**}"
+destination = "https://kphutt.com/$1"
+kind = 301
+
+# Headers are applied in order, and a later match replaces an earlier value, so the
+# catch-all comes first and the more specific Cache-Control rules after it.
+
+# Every response, including the 404 page.
+[[advanced.headers]]
+source = "**"
+[advanced.headers.headers]
+# Starts from default-src 'none' and allows only what the built site loads: its own
+# stylesheet and its own images. No 'unsafe-inline' and no hashes, because there is no
+# inline code (layouts/partials/head.html and footer.html remove the theme's).
+Content-Security-Policy = "default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+# Two years. Deliberately no includeSubDomains and no preload: both are hard to undo, and
+# other services will live on subdomains of this domain. Adding either needs a decision.
+Strict-Transport-Security = "max-age=63072000"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "strict-origin-when-cross-origin"
+# The site uses none of these, so it turns them off for itself and for anything framed in
+# it (nothing is: frame-ancestors 'none' above and there are no iframes).
+Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Resource-Policy = "same-origin"
+# HTML, feeds, sitemap, robots.txt and llms.txt change on every deploy, so they stay
+# short. Five minutes keeps a deploy visible quickly without a request per page view.
+Cache-Control = "public, max-age=300"
+
+# The RSS feeds and the sitemap. The server's default for .xml is text/xml; GitHub Pages
+# served application/xml, and readers and crawlers have seen that for years. Keep it.
+[[advanced.headers]]
+source = "**/*.xml"
+headers.Content-Type = "application/xml"
+
+# Files whose names never change but whose content might: icons and the og-image.
+[[advanced.headers]]
+source = "/{favicon.ico,favicon.svg,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png,safari-pinned-tab.svg,og-image.png}"
+headers.Cache-Control = "public, max-age=86400"
+
+# The stylesheet. Hugo puts a hash of its content in the file name, so a changed stylesheet
+# is a new URL and the old one can be cached forever.
+#
+# The server applies these rules by path whatever the status, so a request for a
+# stylesheet name that does not exist gets a 404 with this year-long header too. That only
+# happens for a name no build produced, or in the instant of a promotion if a page from
+# the new revision is followed by its stylesheet request reaching the old one. Kept
+# anyway: the cost is one browser caching a 404 for a stylesheet URL, against a
+# long immutable cache for every visitor, every time.
+[[advanced.headers]]
+source = "/assets/css/stylesheet.*.css"
+headers.Cache-Control = "public, max-age=31536000, immutable"

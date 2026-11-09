@@ -25,3 +25,7 @@
 
 [tools]
 hugo-extended = "0.169.0"
+
+# OpenTofu for infra/. Infra is only ever applied by hand from a dev machine (infra/README.md), so
+# this pin is what keeps every `tofu plan` reading the same state format and lock file.
+opentofu = "1.13.9"

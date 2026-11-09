@@ -1,0 +1,130 @@
+name: Roll back Cloud Run
+
+# Send 100% of Cloud Run traffic to an earlier revision, by name. Run it by hand from the
+# Actions tab when a deploy passed its smoke test but is wrong anyway. Like a deploy, it
+# is gated: the target revision is smoke-tested at its own tagged URL before it gets any
+# traffic, and refused if its image is gone from the registry. After the move, the `live`
+# tag follows it, so the registry's cleanup keeps the image now serving.
+#
+# The bad revision stays deployed (at 0%) for inspection, and the next merge to main
+# deploys forward as usual. To undo a rollback, run this again with the newer revision.
+#
+# Keyless, like the deploy. infra/identities.tf allows only this file and hugo.yml, on
+# main, in the cloud-run environment, to use the deployer identity.
+#
+# Revision names: gcloud run revisions list --service <service> --region <region> --project <project>
+#
+# It shares a queue with the deploy job, and GitHub keeps only one waiting run per queue:
+# if a rollback is waiting behind a deploy and another merge lands, the rollback is
+# dropped. Check that it ran, and run it again once the deploys finish.
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Revision to send 100% of traffic to, e.g. site-00042-abc"
+        required: true
+        type: string
+      skip_smoke:
+        description: "Break-glass: move traffic even if the revision fails today's smoke test (it may predate a header change)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # the GitHub OIDC token WIF exchanges; nothing else
+
+# Shared with the deploy job: one change to the traffic split at a time.
+concurrency:
+  group: cloud-run-traffic
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    # Nothing to roll back until the infrastructure and its repository variables exist.
+    if: vars.WIF_PROVIDER != ''
+    runs-on: ubuntu-24.04
+    environment: cloud-run # the only environment the Google identity trusts
+    timeout-minutes: 15
+    env:
+      GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      IMAGE_BASE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/${{ vars.ARTIFACT_REPO }}/site
+      TARGET_REV: ${{ inputs.revision }}
+      SKIP_SMOKE: ${{ inputs.skip_smoke }}
+      RB_TAG: rb-${{ github.run_id }}
+    steps:
+      # The input is passed through the environment, never pasted into the script, and is
+      # checked against the shape of a revision name before anything uses it.
+      - name: Check the revision name
+        run: |
+          python3 -c 'import os,re,sys; r=os.environ["TARGET_REV"]; sys.exit(0 if re.fullmatch(r"[a-z][a-z0-9-]{0,61}[a-z0-9]", r) else f"not a revision name: {r!r}")'
+      - name: Checkout (for the smoke test and the retag script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Authenticate to Google Cloud (WIF, no key)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      # Refuse a revision whose image is not one of ours (the placeholder the service was
+      # created with), or whose image the registry has since deleted: Cloud Run could not
+      # start it on the next cold start.
+      - name: Check the revision's image still exists
+        run: |
+          image=$(gcloud run revisions describe "$TARGET_REV" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --format='value(spec.containers[0].image)')
+          echo "Revision ${TARGET_REV} runs ${image}"
+          python3 -c 'import os,sys; i=sys.argv[1]; b=os.environ["IMAGE_BASE"]; sys.exit(0 if i.startswith(b + "@sha256:") else f"{i!r} is not an image of {b} pinned by digest")' "$image"
+          gcloud artifacts docker images describe "$image" --format='value(image_summary.digest)' > /dev/null
+          echo "TARGET_DIGEST=${image#*@}" >> "$GITHUB_ENV"
+      - name: Give the revision a test URL (no traffic)
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --update-tags="${RB_TAG}=${TARGET_REV}" --quiet
+          gcloud run services describe "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format=json > "${{ runner.temp }}/service.json"
+          python3 - "${{ runner.temp }}/service.json" <<'PY'
+          import json, os, sys
+          tag = os.environ["RB_TAG"]
+          urls = [t["url"] for t in json.load(open(sys.argv[1]))["status"].get("traffic", []) if t.get("tag") == tag and t.get("url")]
+          if len(urls) != 1:
+              sys.exit(f"could not find the test URL for tag {tag}")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"RB_URL={urls[0]}\n")
+          PY
+      - name: Smoke-test the revision before it gets traffic
+        run: |
+          if [ "$SKIP_SMOKE" = "true" ]; then
+            echo "::warning::smoke gate skipped by request (break-glass)"
+            python3 scripts/smoke.py "$RB_URL" || echo "::warning::the revision fails today's smoke test"
+          else
+            python3 scripts/smoke.py "$RB_URL"
+          fi
+      - name: Send 100% of traffic to it
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --to-revisions="${TARGET_REV}=100" --quiet
+      - name: Point the live tag at its image
+        run: python3 scripts/move_live_tag.py "$IMAGE_BASE" "$TARGET_DIGEST"
+      - name: Remove the test URL
+        if: always()
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --remove-tags="$RB_TAG" --quiet || true
+      - name: Summarise
+        run: |
+          {
+            echo "### Cloud Run traffic: 100% to \`${TARGET_REV}\`"
+            echo
+            echo "To ship forward, fix main; the next merge deploys as usual."
+          } >> "$GITHUB_STEP_SUMMARY"

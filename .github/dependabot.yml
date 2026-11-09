@@ -67,3 +67,30 @@ updates:
       prefix: "chore(hooks)"
     labels:
       - dependencies
+
+  # The server image the Dockerfile pins by digest. Same 7-day release-age delay as the
+  # actions: a freshly pushed image waits a week before it is proposed.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(image)"
+    labels:
+      - dependencies
+
+  # The OpenTofu providers pinned in infra/versions.tf and infra/.terraform.lock.hcl. A
+  # provider bump changes what `tofu plan` proposes, so it gets the same review as any
+  # infra change, and is applied by hand like one.
+  - package-ecosystem: terraform
+    directory: /infra
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(infra)"
+    labels:
+      - dependencies

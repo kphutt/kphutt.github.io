@@ -16,6 +16,7 @@ Run it against a build directory:
 import hashlib
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 # Read the expected origin out of hugo.toml rather than hardcoding it, so this file does
@@ -39,6 +40,9 @@ EXPECTED_FILES = {
     # listed here too because losing it degrades silently to the raster fallback rather
     # than visibly breaking, which is exactly the kind of quiet regression that hides.
     "favicon.svg": "the sharp icon would silently fall back to the resampled raster",
+    # server/sws.toml serves it for every missing page. Without it the server falls back
+    # to a built-in page whose inline <style> the Content Security Policy blocks.
+    "404.html": "missing pages would get the server's built-in error page instead",
 }
 
 
@@ -63,12 +67,28 @@ POLICY_FLOOR = {
     "object-src": {"'none'"},
     "base-uri": {"'none'"},
     "form-action": {"'none'"},
+    "frame-ancestors": {"'none'"},
 }
 
 # Directives that must be present explicitly. default-src does not cover these two, so
 # leaving them out would allow anything; script-src is listed so the intent is visible in
 # the policy itself rather than inherited.
 REQUIRED_DIRECTIVES = ("default-src", "script-src", "base-uri", "form-action")
+
+# The response headers the server sends, from its config. These are what a browser
+# enforces once the site is off GitHub Pages; the in-page policy above is a fallback.
+SERVER_CONFIG = Path(__file__).resolve().parent.parent / "server" / "sws.toml"
+
+# Headers the catch-all rule must set, and the values each may take.
+REQUIRED_SERVER_HEADERS = {
+    "X-Content-Type-Options": {"nosniff"},
+    "Referrer-Policy": {"strict-origin-when-cross-origin", "same-origin", "no-referrer", "strict-origin"},
+    "Cross-Origin-Opener-Policy": {"same-origin"},
+    "Cross-Origin-Resource-Policy": {"same-origin"},
+}
+
+# One year. HSTS shorter than this protects little and is what scanners flag.
+MIN_HSTS_MAX_AGE = 31536000
 
 # Theme templates this repo overrides with a modified copy, and the sha256 of the theme
 # file each copy was made from. A theme update that changes one of them fails the build,
@@ -242,6 +262,84 @@ def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
             failures.append(f"{page}: loads {url} by absolute URL -- use a relative one (relURL)")
 
 
+def check_server_headers(failures: list) -> None:
+    """The server config must send the full header set, with a policy at or above the floor.
+
+    This is the policy that matters once the site is served from the container: unlike
+    the in-page one, it covers frame-ancestors and applies to every response, including
+    feeds, images and the 404 page. Loosening it here fails the build just as loosening
+    the in-page policy does.
+    """
+    name = SERVER_CONFIG.relative_to(SERVER_CONFIG.parent.parent).as_posix()
+    try:
+        config = tomllib.loads(SERVER_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        failures.append(f"{name} could not be read: {e}")
+        return
+
+    general = config.get("general", {})
+    # The server's built-in versions of these would add HSTS with includeSubDomains and
+    # preload, and a one-year cache on files whose names never change.
+    for switch in ("security-headers", "cache-control-headers"):
+        if general.get(switch) is not False:
+            failures.append(f"{name}: {switch} must be false -- the explicit headers replace it")
+
+    rules = (config.get("advanced") or {}).get("headers") or []
+    catch_all = [r for r in rules if r.get("source") == "**"]
+    if not catch_all:
+        failures.append(f"{name}: no catch-all [[advanced.headers]] rule with source = \"**\"")
+        return
+    # HTTP header names are case-insensitive but TOML keys are not, so a second,
+    # differently-cased copy of a header could slip a weaker value past these checks.
+    # Compare lowercased, and refuse duplicates outright.
+    def lowered(rule):
+        out = {}
+        for key, value in rule.get("headers", {}).items():
+            if key.lower() in out:
+                failures.append(f"{name}: rule for {rule.get('source')!r} sets {key} twice (names differ only in case)")
+            out[key.lower()] = value
+        return out
+
+    headers = lowered(catch_all[0])
+
+    # A later rule replaces an earlier value, so only Cache-Control and Content-Type may be
+    # set by the narrower rules. Anything else there could silently weaken the catch-all.
+    for rule in rules:
+        if rule is catch_all[0]:
+            continue
+        for header in lowered(rule):
+            if header not in ("cache-control", "content-type"):
+                failures.append(
+                    f"{name}: rule for {rule.get('source')!r} sets {header}, which would "
+                    f"override the catch-all for those files"
+                )
+
+    policy = headers.get("content-security-policy")
+    if not policy:
+        failures.append(f"{name}: no Content-Security-Policy header")
+    else:
+        required = REQUIRED_DIRECTIVES + ("frame-ancestors", "object-src")
+        for problem in policy_problems(policy, required):
+            failures.append(f"{name}: Content-Security-Policy is weaker than the floor: {problem}")
+
+    hsts = headers.get("strict-transport-security", "")
+    max_age = re.search(r"max-age=(\d+)", hsts)
+    if not max_age or int(max_age.group(1)) < MIN_HSTS_MAX_AGE:
+        failures.append(f"{name}: Strict-Transport-Security max-age must be at least {MIN_HSTS_MAX_AGE}")
+    # Both are hard to undo and cover every subdomain, including ones served elsewhere.
+    # Adding either is a decision for the site's owner, so it fails here until this check
+    # is changed deliberately alongside it.
+    for flag in ("includesubdomains", "preload"):
+        if flag in hsts.lower():
+            failures.append(f"{name}: Strict-Transport-Security has {flag}, which needs an explicit decision")
+
+    for header, allowed in REQUIRED_SERVER_HEADERS.items():
+        if headers.get(header.lower()) not in allowed:
+            failures.append(f"{name}: {header} is {headers.get(header.lower())!r}, expected one of {sorted(allowed)}")
+    if not headers.get("permissions-policy"):
+        failures.append(f"{name}: no Permissions-Policy header")
+
+
 def check_theme_overrides(failures: list) -> None:
     for name, pinned in OVERRIDDEN_THEME_FILES.items():
         theme_file = THEME / name
@@ -409,7 +507,10 @@ def main() -> int:
     check_page_policy(root, failures)
     check_no_outside_loads(root, base, failures)
 
-    # 8. The theme files overridden with modified copies have not moved upstream.
+    # 8. The response headers the server will send hold the same floor, and more.
+    check_server_headers(failures)
+
+    # 9. The theme files overridden with modified copies have not moved upstream.
     check_theme_overrides(failures)
 
     if failures:
@@ -420,8 +521,8 @@ def main() -> int:
 
     print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
     print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve,")
-    print("no inline code, CSP at or above the floor, nothing loaded from another origin,")
-    print("theme overrides in sync.")
+    print("no inline code, CSP at or above the floor in the page and in server/sws.toml,")
+    print("nothing loaded from another origin, theme overrides in sync.")
     return 0
 
 
