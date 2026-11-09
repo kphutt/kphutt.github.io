@@ -184,7 +184,6 @@ def main() -> int:
             "canonical": grab(r"<link rel=canonical href=(\S+?)>"),
             "description": str(len(grab(r'<meta name=description content="([^"]*)"', ""))) + " chars",
             "twitter:description": str(len(grab(r'twitter:description content="([^"]*)"', ""))) + " chars",
-            "CSP hashes": str(len(re.findall(r"'sha256-[A-Za-z0-9+/=]+'", html))),
             "inline scripts": str(len([1 for a, b in re.findall(r"<script([^>]*)>(.*?)</script>", html, re.S) if "ld+json" not in a and b.strip()])),
         }
 
