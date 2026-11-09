@@ -37,6 +37,9 @@ Free. Google issues and renews the certificate.
 - The apex takes the A and AAAA records the mapping shows. Ownership must be verified with
   Google once (a DNS TXT record). For the test, `infra/` proves ownership of the test name
   alone, from code, with a CNAME under it (`infra/README.md`).
+- Tried on `next.kphutt.com`: ownership was proven for the test name only, and Cloud Run
+  accepted the mapping. Because the mapped name is the verified name, the mapping asked for
+  A and AAAA records, the same set an apex gets, not a CNAME.
 - Renewal is Google's job end to end, and nothing sits in front to intercept it.
 
 ### B. Cloudflare proxy in front of a domain mapping
@@ -98,7 +101,7 @@ proxy question. Its cost is a second set of tools (its own command-line tool, co
 
 Not yet made. Recommended path, cheapest proof first, all on `next.kphutt.com`:
 
-1. Map `next.kphutt.com` with option A (DNS-only CNAME). Record what a TLS scan reports.
+1. Map `next.kphutt.com` with option A (DNS only). Record what a TLS scan reports.
    If, against the documentation, it refuses TLS 1.0 and 1.1, choose A: it is the least
    machinery.
 2. Otherwise, try option D on the same name and record the same scan, plus the headers,
