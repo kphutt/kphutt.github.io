@@ -47,12 +47,13 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
    ```
    Read the plan first: it must add only records named `next.kphutt.com` and
    `<token>.next.kphutt.com`, the ownership record and the mapping, and change nothing
-   else. The apply proves ownership of the test name, creates the mapping and adds its CNAME
-   to `ghs.googlehosted.com`, DNS only. Wait for the certificate (usually about 15 minutes,
+   else. The apply proves ownership of the test name, creates the mapping and adds the four
+   A and four AAAA records it asks for, DNS only (`infra/README.md` explains why a verified
+   name gets these rather than a CNAME). Wait for the certificate (usually about 15 minutes,
    up to a day):
    `gcloud beta run domain-mappings describe --domain next.kphutt.com --project "$PROJECT" --region "$REGION"`.
-   Undo: set `test_domain_enabled = false`, plan and apply. That removes the CNAME, the
-   ownership CNAME and the mapping.
+   Undo: set `test_domain_enabled = false`, plan and apply. That removes the test name's
+   records, the ownership CNAME and the mapping.
 3. Measure, and write the results into the ADR:
    - `python scripts/smoke.py https://next.kphutt.com`
    - `curl -sI` on `/`, `/posts/brochure/`, the stylesheet and a missing page

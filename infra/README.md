@@ -105,24 +105,34 @@ Once, before turning it on:
 Then set `test_domain_enabled = true` and plan and apply as in step 4. The apply:
 
 1. asks Google for an ownership token for the test name and creates the CNAME it names,
-   under the test name (`<token>.next.kphutt.com`). A TXT record cannot be used: it could
-   not share a name with the test name's own CNAME;
+   under the test name (`<token>.next.kphutt.com`);
 2. has Google check it, which makes the account running OpenTofu a verified owner of the
    test name (not of `kphutt.com`);
-3. creates the domain mapping;
-4. creates the CNAME from the test name to the target the mapping gives
-   (`ghs.googlehosted.com`). Google then issues the certificate, usually within 15
+3. creates the domain mapping, and checks that it asks for exactly the records in
+   `local.test_records` (`test-domain.tf`). If it asks for anything else, the apply stops
+   there, before any record for the test name exists;
+4. creates those records under the test name, DNS only. Because the mapped name is the
+   verified name, Google treats it like a bare domain: four A and four AAAA records, at
+   Google's front-end addresses. Google then issues the certificate, usually within 15
    minutes and up to a day.
 
-Google's mapping page says to verify the parent domain, `kphutt.com`. Verifying only the
-test name is the narrower proof and is reported to work, but it is not the documented path.
-If the mapping step refuses the name as unverified, set `verify_test_hostname = false`,
-verify `kphutt.com` once with `gcloud domains verify kphutt.com` (Search Console asks for a
-TXT record on `kphutt.com`, added by hand: that record is on the apex, so this code will not
-create it), and apply again.
+The records are a fixed list in the code, not values read from the mapping. OpenTofu cannot
+plan one record per entry of a list it only learns during the apply. The check in step 3 is
+what keeps the list honest. If Google ever changes what it asks for, the apply fails with a
+message saying so; read the mapping with
+`gcloud beta run domain-mappings describe --domain next.kphutt.com`, and change the list in
+review.
 
-To switch it off, set `test_domain_enabled = false` and apply: the record, the mapping and
-the ownership CNAME are removed. OpenTofu forgets Google's ownership record rather than
+Google's mapping page says to verify the parent domain, `kphutt.com`. Verifying only the
+test name was enough: Cloud Run accepted the mapping. If that ever stops working, set
+`verify_test_hostname = false`, verify `kphutt.com` once with
+`gcloud domains verify kphutt.com` (Search Console asks for a TXT record on `kphutt.com`,
+added by hand: that record is on the apex, so this code will not create it), and apply
+again. The test name is then a subdomain of the verified name, so it gets one CNAME to
+`ghs.googlehosted.com` instead.
+
+To switch it off, set `test_domain_enabled = false` and apply: the test name's records, the
+mapping and the ownership CNAME are removed. OpenTofu forgets Google's ownership record rather than
 deleting it, because Google's API refuses to delete it while the CNAME still exists. Google
 re-checks ownership from time to time and drops it once the CNAME is gone.
 

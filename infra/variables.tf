@@ -78,7 +78,7 @@ variable "request_log_retention_days" {
 # The test name for the move (docs/design/cutover-runbook.md, step 4). Off by default, so the
 # base infrastructure can be applied without a Cloudflare token.
 variable "test_domain_enabled" {
-  description = "Map test_hostname to the service and create its DNS record at Cloudflare. Needs CLOUDFLARE_API_TOKEN."
+  description = "Map test_hostname to the service and create its DNS records at Cloudflare. Needs CLOUDFLARE_API_TOKEN."
   type        = bool
   default     = false
 }

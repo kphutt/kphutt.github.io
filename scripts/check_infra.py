@@ -18,6 +18,7 @@ providers. Applying infra is done by hand (infra/README.md), never by a check.
 from __future__ import annotations
 
 import ast
+import ipaddress
 import re
 import shutil
 import subprocess
@@ -82,12 +83,40 @@ def check_deployer_commands() -> bool:
 #     source or import block (nothing existing is read into, or adopted by, this state);
 #   - a record's name is one of the expressions below, never a literal. Both are under the
 #     test name, whose validation refuses the apex and www;
-#   - every record is DNS only and carries the precondition that refuses the apex and www.
+#   - every record is DNS only and carries the precondition that refuses the apex and www;
+#   - the ownership record is a CNAME. The test name's records come only from the fixed lists
+#     local.test_address_records (A and AAAA records holding literal addresses) and
+#     local.test_subdomain_records (one CNAME to ghs.googlehosted.com), and they wait for the
+#     mapping, whose postcondition checks Google asked for exactly that list.
 #
-# A literal name, "@", a new expression or a new resource type fails here, so widening what
-# OpenTofu manages at Cloudflare takes a change to this rule, in review.
+# A literal name, "@", a new expression, a new record type or a new resource type fails here,
+# so widening what OpenTofu manages at Cloudflare takes a change to this rule, in review.
 CLOUDFLARE_TYPES = {"cloudflare_dns_record"}
 RECORD_NAMES = {"var.test_hostname", "local.verification_record_name"}
+# The lines a record must carry, by its name.
+RECORD_RULES = {
+    "local.verification_record_name": {
+        "type": '"CNAME"',
+    },
+    "var.test_hostname": {
+        "for_each": "local.test_domain ? local.test_records : {}",
+        "type": "each.value.type",
+        "content": "each.value.content",
+        "depends_on": "[google_cloud_run_domain_mapping.test]",
+    },
+}
+TEST_RECORDS = "test_records = local.verify ? local.test_address_records : local.test_subdomain_records"
+# The types each fixed list may hold, and what a value of that type must be.
+RECORD_LISTS = {
+    "test_address_records": {
+        "A": lambda v: isinstance(ipaddress.ip_address(v), ipaddress.IPv4Address),
+        "AAAA": lambda v: isinstance(ipaddress.ip_address(v), ipaddress.IPv6Address),
+    },
+    "test_subdomain_records": {
+        "CNAME": lambda v: v == "ghs.googlehosted.com",
+    },
+}
+ENTRY = re.compile(r'^\s*"([a-z0-9-]+)"\s*=\s*\{\s*type\s*=\s*"([^"]*)"\s*,\s*content\s*=\s*"([^"]*)"\s*\}\s*$')
 # local.verification_record_name must be built under the test name in both branches.
 VERIFICATION_NAME_PARTS = (
     'endswith(local.verification_label, ".${var.test_hostname}")',
@@ -104,6 +133,38 @@ def block_body(text: str, start: int) -> str:
         depth += {"{": 1, "}": -1}.get(text[i], 0)
         i += 1
     return text[start:i - 1]
+
+
+def attribute(body: str, key: str) -> list[str]:
+    return re.findall(rf"^\s*{key}\s*=\s*(.+?)\s*$", body, re.M)
+
+
+def check_record_list(every: str, name: str, allowed: dict) -> list[str]:
+    """Every entry of the fixed list `name` must be one line of an allowed type and value."""
+    m = re.search(rf"^\s*{name}\s*=\s*\{{", every, re.M)
+    if not m:
+        return [f"local.{name} is missing"]
+    if len(re.findall(rf"^\s*{name}\s*=", every, re.M)) != 1:
+        return [f"local.{name} is defined more than once"]
+    problems, seen = [], 0
+    for line in block_body(every, m.end()).splitlines():
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        e = ENTRY.match(line)
+        if not e:
+            problems.append(f"local.{name}: not a one-line {{ type, content }} entry: {line.strip()}")
+            continue
+        _, rtype, value = e.groups()
+        try:
+            good = rtype in allowed and allowed[rtype](value)
+        except ValueError:
+            good = False
+        if not good:
+            problems.append(f"local.{name}: {rtype} {value!r} is not allowed (only {sorted(allowed)})")
+        seen += 1
+    if not seen:
+        problems.append(f"local.{name} is empty")
+    return problems
 
 
 def check_cloudflare(infra: Path = INFRA) -> bool:
@@ -127,14 +188,24 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
                 problems.append(f"{where}: only {', '.join(sorted(CLOUDFLARE_TYPES))} is allowed")
                 continue
             body = block_body(text, m.end())
-            names = re.findall(r"^\s*name\s*=\s*(.+?)\s*$", body, re.M)
+            names = attribute(body, "name")
             if len(names) != 1 or names[0] not in RECORD_NAMES:
                 problems.append(f"{where}: name must be one of {sorted(RECORD_NAMES)}, got {names}")
+            else:
+                for key, want in RECORD_RULES[names[0]].items():
+                    got = attribute(body, key)
+                    if got != [want]:
+                        problems.append(f"{where}: {key} must be {want}, got {got}")
             if not re.search(r"^\s*proxied\s*=\s*false\s*$", body, re.M):
                 problems.append(f"{where}: must set proxied = false")
             if "lookup(local.allowed_record_name," not in body:
                 problems.append(f"{where}: missing the precondition that refuses kphutt.com and www")
     every = "\n".join(texts.values())
+    if "var.test_hostname" in every:
+        if len(re.findall(rf"^\s*{re.escape(TEST_RECORDS)}\s*$", every, re.M)) != 1 or len(re.findall(r"^\s*test_records\s*=", every, re.M)) != 1:
+            problems.append(f"local.test_records must be defined once, as: {TEST_RECORDS}")
+        for name, allowed in RECORD_LISTS.items():
+            problems += check_record_list(every, name, allowed)
     if "local.verification_record_name" in every:
         problems += [f"local.verification_record_name is no longer built under the test name (missing {part})"
                      for part in VERIFICATION_NAME_PARTS if part not in every]
