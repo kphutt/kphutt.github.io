@@ -24,4 +24,4 @@
 # the same gate run in two places; if they disagree, the local half is worthless.
 
 [tools]
-hugo-extended = "0.164.0"
+hugo-extended = "0.169.0"
