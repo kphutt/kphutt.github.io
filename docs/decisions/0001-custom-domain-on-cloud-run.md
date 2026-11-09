@@ -9,7 +9,7 @@
 
 The site is moving to Cloud Run so it can send real security headers
 ([plan](../design/site-move.md)). Cloud Run gives every service a `*.run.app` address. The
-question is how `kphutt.com` reaches it, under four constraints:
+question is how `kphutt.com` reaches it, under five constraints:
 
 1. $0 fixed monthly cost.
 2. No silent, delayed failure. Certificate renewal must not depend on something that only
@@ -19,6 +19,7 @@ question is how `kphutt.com` reaches it, under four constraints:
    and 1.1 and offers TLS 1.2 and 1.3. The `*.run.app` address of an existing Cloud Run
    service behaves the same.
 4. DNS stays at Cloudflare (Free plan), DNSSEC on, and other subdomains will exist later.
+5. Everything is set up from code (OpenTofu or a checked-in script), never a console change that can't be repeated.
 
 ## Options
 
@@ -90,11 +91,7 @@ address and returns the response unchanged, headers included.
 Google's mapping page names this as one of the two routes to TLS 1.2-only traffic, and
 Firebase Hosting can rewrite every path to a Cloud Run service in us-west1 or us-central1.
 It has no fixed monthly fee and needs nothing in front of it, so it would not reopen the DNS
-proxy question. It is ruled out anyway: I decided against adding Firebase before this move
-was planned. It is recorded here because the source used for option A points at it,
-and because it would add a third surface (a Hosting site and its own CDN cache, which can
-also add or change response headers) that would need the same header check as everything
-else.
+proxy question. Its cost is a second set of tools (its own command-line tool, config file and console) plus a CDN cache that can add or change response headers, so it would need the same header check as everything else. It stays open, and is compared with D after the test, against constraint 5. It is recorded here because the source used for option A points at it.
 
 ## Decision
 
@@ -107,8 +104,7 @@ Not yet made. Recommended path, cheapest proof first, all on `next.kphutt.com`:
    the request logs and the Worker's cost.
 3. Choose between A (accept TLS 1.0/1.1 being offered) and D (accept a Worker), and record
    the measurements and the choice here before the apex moves. B is not recommended, for
-   the renewal reason above. C would add a monthly cost. E stays ruled out unless that
-   earlier decision is reopened.
+   the renewal reason above. C would add a monthly cost. E is compared with D at that point.
 
 ## The apex
 
