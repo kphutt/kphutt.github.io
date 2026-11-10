@@ -8,12 +8,10 @@ name: Build and deploy
 #              the repository variables are set (infra/README.md), so this workflow is
 #              safe to merge before any of that.
 #
-# The monthly `schedule:` rebuild exists for /.well-known/security.txt: its Expires date is
-# generated at build time (180 days out), so it only stays valid if the site is rebuilt
-# well inside that. GitHub turns off a scheduled workflow after 60 days without a
-# commit, so a quiet repository needs a push (or a manual run) at least every 60 days. A scheduled run executes on main, and the Cloud Run identity trusts
-# push, workflow_dispatch and schedule events (infra/identities.tf), so it deploys like
-# a merge. It costs nothing: Actions is free on a public repo and Cloud Run scales to zero.
+# Pushes rebuild the site, and this monthly run covers the months without one, so
+# security.txt's Expires date (180 days out) doesn't lapse. But GitHub pauses schedules
+# after 60 days without repository activity. If that happens, re-enable this workflow in the
+# Actions tab.
 #
 # The required status check is `build`, a summary job at the end that passes only when
 # the site build (`site`), the container smoke test (`image`) and the infra checks
