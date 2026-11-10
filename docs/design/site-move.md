@@ -120,5 +120,5 @@ record. A log exclusion keeps them from being stored twice if a log sink is adde
 
 ## Open questions
 
-- Whether to close the TLS 1.0 and 1.1 gap (see the ADR), before or after the apex moves.
+- Whether to close the TLS 1.0 and 1.1 gap. The ADR schedules the review within 30 days after the apex moves, before GitHub Pages is switched off.
   Certificate renewal on the mapping is still unproven: it needs about 90 days.
