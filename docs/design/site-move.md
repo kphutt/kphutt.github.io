@@ -108,8 +108,9 @@ person does is run it with an owner's credentials, and the few things no code ca
   password manager and reaches OpenTofu only through the environment.
 - The test subdomain's DNS record, its domain mapping and the proof of ownership for it
   are OpenTofu (`infra/test-domain.tf`), and cannot touch `kphutt.com` or `www`.
-- The DNS changes to `kphutt.com` and `www` at the cutover are still dashboard steps in the
-  runbook. Bringing the zone's existing records under OpenTofu is a separate change.
+- The zone's production records, `kphutt.com`, `www` and mail, are OpenTofu
+  (`infra/dns.tf`), adopted as they were. The DNS changes at the cutover are edits to that
+  file, made in review, then a plan and an apply.
 - Turn off Cloudflare Web Analytics automatic injection for the zone, if it is on.
 - Remove the Pages workflow and disable Pages, after the cutover.
 
@@ -120,5 +121,5 @@ record. A log exclusion keeps them from being stored twice if a log sink is adde
 
 ## Open questions
 
-- Whether to close the TLS 1.0 and 1.1 gap. The ADR schedules the review within 30 days after the apex moves, before GitHub Pages is switched off.
+- Whether to close the TLS 1.0 and 1.1 gap. The ADR says to revisit it by 2027-02-10 (three months), before GitHub Pages is switched off.
   Certificate renewal on the mapping is still unproven: it needs about 90 days.

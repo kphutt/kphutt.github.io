@@ -3,8 +3,10 @@
 
 Runs in CI (the `infra` job in .github/workflows/hugo.yml) and at pre-push when infra/
 changed (.pre-commit-config.yaml). First two static rules: the deploy workflows only use
-registry commands the deployer's role allows, and no Cloudflare resource can touch
-kphutt.com or www (the live site). Then the same four commands in both places:
+registry commands the deployer's role allows, and Cloudflare records are held to two
+files: the production records (the live site at kphutt.com and www, and email) only in
+infra/dns.tf, with every value written out, and the test name's records only under the test
+name. Then the same four commands in both places:
 
     tofu fmt -check -recursive
     tofu init -backend=false -input=false
@@ -105,8 +107,17 @@ def check_deployer_commands() -> bool:
     return ok
 
 
-# kphutt.com and www.kphutt.com serve the live site. infra/ manages only the test name's
-# records (infra/test-domain.tf), so every Cloudflare resource is held to this:
+# kphutt.com and www.kphutt.com serve the live site. Cloudflare records live in two places,
+# and each is held to its own rule.
+#
+# infra/dns.tf (PRODUCTION_FILE) holds the zone's production records, adopted by import
+# blocks: one resource, cloudflare_dns_record.production, over local.production_records, a
+# fixed list of one-line entries with every value literal. It is the only file that may
+# import a Cloudflare object, the only file that may use that list, and its records are DNS
+# only and carry prevent_destroy. So a change to the live site's DNS is always a changed line
+# in that file. No entry may be the test name or under it: those belong to test-domain.tf.
+#
+# Every other Cloudflare resource is held to this:
 #
 #   - the only Cloudflare resource type is a DNS record, and there is no Cloudflare data
 #     source or import block (nothing existing is read into, or adopted by, this state);
@@ -151,6 +162,94 @@ VERIFICATION_NAME_PARTS = (
     'endswith(local.verification_label, ".${var.test_hostname}")',
     '"${local.verification_label}.${var.test_hostname}"',
 )
+PRODUCTION_FILE = "dns.tf"
+ZONE = "kphutt.com"
+# The default test_hostname (variables.tf). Production entries stay off it and out from under it.
+TEST_NAME = "next.kphutt.com"
+# The lines cloudflare_dns_record.production must carry, exactly once each.
+PRODUCTION_RULES = {
+    "for_each": "local.production_records",
+    "zone_id": "var.cloudflare_zone_id",
+    "name": "each.value.name",
+    "type": "each.value.type",
+    "content": "each.value.content",
+    "priority": "each.value.priority",
+    "ttl": "1",
+    "proxied": "false",
+    "prevent_destroy": "true",
+}
+PRODUCTION_IMPORT = {
+    "for_each": "var.import_production_dns ? local.production_records : {}",
+    "to": "cloudflare_dns_record.production[each.key]",
+    "id": '"${var.cloudflare_zone_id}/${each.value.id}"',
+}
+PRODUCTION_ENTRY = re.compile(
+    r'^\s*"([a-z0-9-]+)"\s*=\s*\{\s*id\s*=\s*"([0-9a-f]{32})"\s*,\s*name\s*=\s*"([^"]+)"\s*,'
+    r'\s*type\s*=\s*"([A-Z]+)"\s*,\s*content\s*=\s*"((?:[^"\\]|\\")*)"\s*,\s*priority\s*=\s*(null|[0-9]+)\s*\}\s*$'
+)
+HOST = re.compile(r"^([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?[.])+[a-z]{2,}$")
+
+
+def production_value_ok(rtype: str, content: str, priority: str) -> bool:
+    """A literal value of a type the production list may hold. Only MX has a priority."""
+    if (rtype == "MX") != (priority != "null"):
+        return False
+    if rtype == "A":
+        return isinstance(ipaddress.ip_address(content), ipaddress.IPv4Address)
+    if rtype == "AAAA":
+        return isinstance(ipaddress.ip_address(content), ipaddress.IPv6Address)
+    if rtype in ("CNAME", "MX"):
+        return bool(HOST.match(content))
+    if rtype == "TXT":
+        # Cloudflare stores TXT values quoted; "${" would be an expression, not a literal.
+        return content.startswith('\\"') and content.endswith('\\"') and "${" not in content
+    return False
+
+
+def check_production_list(texts: dict[str, str]) -> list[str]:
+    """local.production_records: defined once, in dns.tf, as one literal line per record."""
+    problems = []
+    for name, text in texts.items():
+        if name != PRODUCTION_FILE and "production_records" in text:
+            problems.append(f"{name}: local.production_records may only be used in {PRODUCTION_FILE}")
+    text = texts.get(PRODUCTION_FILE, "")
+    m = re.search(r"^\s*production_records\s*=\s*\{", text, re.M)
+    if not m:
+        return problems + [f"{PRODUCTION_FILE}: local.production_records is missing"]
+    if len(re.findall(r"^\s*production_records\s*=", text, re.M)) != 1:
+        return problems + [f"{PRODUCTION_FILE}: local.production_records is defined more than once"]
+    seen = 0
+    for line in block_body(text, m.end()).splitlines():
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        e = PRODUCTION_ENTRY.match(line)
+        if not e:
+            problems.append("local.production_records: not a one-line { id, name, type, content, priority } "
+                            f"entry: {line.strip()[:80]}")
+            continue
+        key, _, rname, rtype, content, priority = e.groups()
+        seen += 1
+        if not (rname == ZONE or rname.endswith("." + ZONE)):
+            problems.append(f"local.production_records[{key}]: {rname} is not in the {ZONE} zone")
+        if rname == TEST_NAME or rname.endswith("." + TEST_NAME):
+            problems.append(f"local.production_records[{key}]: {rname} belongs to test-domain.tf, not here")
+        try:
+            good = production_value_ok(rtype, content, priority)
+        except ValueError:
+            good = False
+        if not good:
+            problems.append(f"local.production_records[{key}]: {rtype} {content[:40]!r} "
+                            f"priority {priority} is not allowed")
+    if not seen:
+        problems.append("local.production_records is empty")
+    return problems
+
+
+def check_exact_lines(where: str, body: str, rules: dict[str, str]) -> list[str]:
+    return [f"{where}: {key} must be {want}, got {attribute(body, key)}"
+            for key, want in rules.items() if attribute(body, key) != [want]]
+
+
 BLOCK = re.compile(r'^\s*(resource|data)\s+"([^"]+)"\s+"([^"]+)"\s*\{', re.M)
 IMPORT = re.compile(r"^\s*import\s*\{", re.M)
 
@@ -201,15 +300,29 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
     problems += [f"{f.name}: JSON configuration is not covered by this rule; write HCL"
                  for f in sorted(infra.glob("*.tf.json"))]
     texts = {f.name: f.read_text(encoding="utf-8") for f in sorted(infra.glob("*.tf"))}
+    production = 0
     for name, text in texts.items():
         for m in IMPORT.finditer(text):
-            if "cloudflare_" in block_body(text, m.end()):
-                problems.append(f"{name}: an import block adopts an existing Cloudflare object")
+            body = block_body(text, m.end())
+            if name == PRODUCTION_FILE:
+                problems += check_exact_lines(f"{name}: import", body, PRODUCTION_IMPORT)
+            elif "cloudflare_" in body:
+                problems.append(f"{name}: an import block adopts an existing Cloudflare object "
+                                f"(only {PRODUCTION_FILE} may)")
         for m in BLOCK.finditer(text):
             kind, rtype, rname = m.groups()
+            where = f"{name}: {kind} {rtype}.{rname}"
+            if name == PRODUCTION_FILE:
+                # dns.tf holds the production records and nothing else.
+                if (kind, rtype, rname) != ("resource", "cloudflare_dns_record", "production"):
+                    problems.append(f"{where}: {PRODUCTION_FILE} may hold only resource "
+                                    "cloudflare_dns_record.production")
+                    continue
+                production += 1
+                problems += check_exact_lines(where, block_body(text, m.end()), PRODUCTION_RULES)
+                continue
             if not rtype.startswith("cloudflare_"):
                 continue
-            where = f"{name}: {kind} {rtype}.{rname}"
             if kind == "data":
                 problems.append(f"{where}: no Cloudflare data sources (nothing existing is read)")
                 continue
@@ -229,6 +342,12 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
                 problems.append(f"{where}: must set proxied = false")
             if "lookup(local.allowed_record_name," not in body:
                 problems.append(f"{where}: missing the precondition that refuses kphutt.com and www")
+    if production != 1:
+        problems.append(f"{PRODUCTION_FILE}: must hold resource cloudflare_dns_record.production exactly once, "
+                        f"found {production}")
+    if len(IMPORT.findall(texts.get(PRODUCTION_FILE, ""))) != 1:
+        problems.append(f"{PRODUCTION_FILE}: must hold exactly one import block, for the production records")
+    problems += check_production_list(texts)
     every = "\n".join(texts.values())
     if "var.test_hostname" in every:
         if len(re.findall(rf"^\s*{re.escape(TEST_RECORDS)}\s*$", every, re.M)) != 1 or len(re.findall(r"^\s*test_records\s*=", every, re.M)) != 1:
@@ -254,7 +373,8 @@ def main() -> int:
 
 def run_infra(infra: Path) -> int:
     if not check_cloudflare(infra):
-        print("\ninfra check FAILED: a Cloudflare resource could touch kphutt.com or www", file=sys.stderr)
+        print("\ninfra check FAILED: a Cloudflare record breaks the production or test-name rule",
+              file=sys.stderr)
         return 1
     cmd = tofu()
     version = subprocess.run([*cmd, "version"], capture_output=True, text=True, cwd=infra).stdout

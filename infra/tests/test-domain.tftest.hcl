@@ -1,8 +1,8 @@
 # Offline plan tests for the test name (test-domain.tf): `tofu test` from infra/.
 #
 # Providers are mocked: no GCP project, no Cloudflare account, no token. The point is the
-# guard. kphutt.com and www.kphutt.com serve the live site, and no input may turn either of
-# them into a record this configuration manages.
+# guard. kphutt.com and www.kphutt.com serve the live site. They are managed in dns.tf only,
+# and no input to test-domain.tf may turn either of them into a record it manages.
 
 mock_provider "google" {
   mock_data "google_project" {
@@ -62,18 +62,16 @@ variables {
   billing_account      = "000000-000000-000000"
   alert_email          = "alerts@example.com"
   cloudflare_zone_id   = "0123456789abcdef0123456789abcdef"
+  # `tofu test` cannot run import blocks (dns.tf).
+  import_production_dns = false
 }
 
-run "off_by_default_so_no_dns_and_no_token" {
+run "off_by_default_so_no_test_name_records" {
   command = plan
-
-  variables {
-    cloudflare_zone_id = ""
-  }
 
   assert {
     condition     = length(cloudflare_dns_record.test) == 0 && length(cloudflare_dns_record.verification) == 0
-    error_message = "With test_domain_enabled unset, no DNS record may be planned."
+    error_message = "With test_domain_enabled unset, no record for the test name may be planned."
   }
   assert {
     condition     = length(google_cloud_run_domain_mapping.test) == 0 && length(google_site_verification_web_resource.test) == 0
@@ -478,5 +476,6 @@ run "on_without_a_zone_id_is_refused" {
 
   expect_failures = [
     cloudflare_dns_record.verification,
+    cloudflare_dns_record.production,
   ]
 }
