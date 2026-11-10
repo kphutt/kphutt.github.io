@@ -12,8 +12,8 @@
 # from the same server, so they add almost no outbound data once Cloud Run serves the site.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
-# region counts as one execution per period. 3 names x 3 regions x one check per 5 minutes
-# is about 78,000 a month. Alert policies on uptime metrics are not charged, even after
+# region counts as one execution per period. 2 names x 3 regions x one check per 15 minutes
+# is about 17,000 a month. Alert policies on uptime metrics are not charged, even after
 # Google starts charging for alerting (not before 2027-09-01). Source:
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
@@ -53,7 +53,7 @@ locals {
 resource "google_monitoring_uptime_check_config" "site" {
   for_each     = toset(var.uptime_hostnames)
   display_name = "Site ${each.value}"
-  period       = "300s"
+  period       = "900s"
   timeout      = "10s"
 
   http_check {
@@ -93,14 +93,14 @@ resource "google_monitoring_alert_policy" "site_down" {
 
       # Count, per host, how many regions report a failed check. More than 1 means 2 or more.
       aggregations {
-        alignment_period     = "1200s"
+        alignment_period     = "1800s"
         per_series_aligner   = "ALIGN_NEXT_OLDER"
         cross_series_reducer = "REDUCE_COUNT_FALSE"
         group_by_fields      = ["resource.label.host"]
       }
       comparison      = "COMPARISON_GT"
       threshold_value = 1
-      duration        = "600s"
+      duration        = "1800s"
 
       trigger {
         count = 1
@@ -136,14 +136,14 @@ resource "google_monitoring_alert_policy" "cert_expiring" {
 
       # The smallest value any region sees, per host. The metric is in days.
       aggregations {
-        alignment_period     = "1200s"
+        alignment_period     = "1800s"
         per_series_aligner   = "ALIGN_NEXT_OLDER"
         cross_series_reducer = "REDUCE_MIN"
         group_by_fields      = ["resource.label.host"]
       }
       comparison      = "COMPARISON_LT"
       threshold_value = var.uptime_cert_expiry_days
-      duration        = "600s"
+      duration        = "1800s"
 
       trigger {
         count = 1

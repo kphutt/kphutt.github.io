@@ -82,8 +82,8 @@ run "checks_the_test_name_by_default" {
     error_message = "The check must expect exactly 200."
   }
   assert {
-    condition     = google_monitoring_uptime_check_config.site["kphutt.com"].period == "300s"
-    error_message = "The check runs every 5 minutes."
+    condition     = google_monitoring_uptime_check_config.site["kphutt.com"].period == "900s"
+    error_message = "The check runs every 15 minutes."
   }
   assert {
     condition     = length(google_monitoring_uptime_check_config.site["kphutt.com"].selected_regions) >= 3
@@ -103,8 +103,8 @@ run "down_alert_needs_two_regions_for_ten_minutes" {
     error_message = "The down alert must count failing regions."
   }
   assert {
-    condition     = google_monitoring_alert_policy.site_down.conditions[0].condition_threshold[0].duration == "600s"
-    error_message = "The down alert waits 10 minutes."
+    condition     = google_monitoring_alert_policy.site_down.conditions[0].condition_threshold[0].duration == "1800s"
+    error_message = "The down alert waits 30 minutes (two failed checks in a row)."
   }
   assert {
     condition     = strcontains(google_monitoring_alert_policy.site_down.conditions[0].condition_threshold[0].filter, "uptime_check/check_passed") && strcontains(google_monitoring_alert_policy.site_down.conditions[0].condition_threshold[0].filter, "next-kphutt-com-abc123")
