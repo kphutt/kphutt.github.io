@@ -313,19 +313,19 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
 
 ## Retiring Pages (either option)
 
-Once the new site has been stable, and not before the TLS question in the ADR has been
-revisited. Revisit by 2027-02-10 (three months), before GitHub Pages is switched off: Pages
-stays on until that review is done.
+Done. After the switch was verified, GitHub Pages was retired in its own pull request, and
+Pages is not a rollback target any more: a rollback now means putting the old records back
+and re-enabling Pages by hand, which only works while its certificate lasts. That pull request:
 
-1. As its own pull request:
-   - remove the `deploy` job and the Pages artifact upload from `hugo.yml`;
-   - remove the `CNAME` check from `scripts/check_build.py` and delete `static/CNAME`;
-   - delete the in-page CSP meta tag in `layouts/partials/extend_head.html` (the header
-     replaces it), and drop the in-page policy check (`check_page_policy`, added with the
-     inline-code removal) from `scripts/check_build.py`, which then
-     checks the header policy in `server/sws.toml` alone;
-   - update the "Deployment, DNS and TLS" section of `AGENTS.md`.
-2. Then, outside the repo: disable GitHub Pages in the repository settings and delete the
-   `github-pages` environment. The required status check is `build`, which stays: it is the
-   summary job that passes only when the site build, the container smoke test and the infra
-   checks all pass. Branch protection needs no change.
+- removed the `deploy` job and the Pages artifact upload from `hugo.yml`;
+- removed the `CNAME` check from `scripts/check_build.py` and deleted `static/CNAME`;
+- deleted the in-page CSP meta tag in `layouts/partials/extend_head.html` (the header
+  replaces it), and dropped `check_page_policy` from `scripts/check_build.py`, which now
+  checks the header policy in `server/sws.toml` alone;
+- rewrote the "Deployment, DNS and TLS" and "Security headers" sections of `AGENTS.md`.
+
+Then, outside the repo: GitHub Pages was disabled in the repository settings (Settings,
+Pages, Build and deployment, set the source to none, and clear the custom domain), and the
+`github-pages` environment was deleted. The required status check is `build`, which stays:
+it is the summary job that passes only when the site build, the container smoke test and the
+infra checks all pass. Branch protection needs no change.

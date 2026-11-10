@@ -116,7 +116,8 @@ site refuses today. We accept that for now. The pages are public and static, not
 secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.3. Scanners
 that cap the grade for TLS 1.0 and 1.1 will report it.
 
-**To revisit.** Revisit by 2027-02-10 (three months), before GitHub Pages is switched off.
+**To revisit.** Revisit by 2027-02-10 (three months). GitHub Pages was retired after the
+cutover, so this review no longer gates anything; it is a date to look at the question again.
 The TLS question is not closed.
 
 **Why not the others, for now**

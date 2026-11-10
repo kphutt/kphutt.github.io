@@ -1,20 +1,19 @@
 # kphutt.github.io — contributor guide
 
 ## What This Is
-Personal website for Karsten Huttelmaier. Hugo static site deployed to GitHub Pages.
+Personal website for Karsten Huttelmaier. Hugo static site, served from Cloud Run.
 
 ## Architecture
 - Hugo with PaperMod theme
 - Homepage: `content/_index.md` (custom layout renders as content page, not post list)
 - Posts: `content/posts/` (individual markdown files, rendered as post list)
-- Deployment: GitHub Actions on push to main
-- Moving to Cloud Run (plan: `docs/design/site-move.md`). Until the cutover, GitHub Pages
-  serves kphutt.com and the Cloud Run deploy runs beside it:
+- Deployment: GitHub Actions on push to main builds and checks the site, then deploys it
+  to Cloud Run (`docs/design/site-move.md`; the move from GitHub Pages is done):
   - `server/sws.toml`: the static-web-server config, which holds every response header.
     It is a security policy; `scripts/check_build.py` fails the build if it weakens.
   - `Dockerfile`: the server image plus the checked build. Hugo does not run in it.
-  - `infra/`: the Google Cloud resources (OpenTofu). They are applied by hand; CI only
-    deploys images. See `infra/README.md`.
+  - `infra/`: the Google Cloud resources and the DNS records (OpenTofu). They are applied by
+    hand; CI only deploys images. See `infra/README.md`.
   - `scripts/smoke.py`: run against a container or a Cloud Run candidate before it gets
     traffic.
 
@@ -60,65 +59,83 @@ in CI.
 - That's it. Push to main, GitHub Actions deploys.
 
 ## Deployment, DNS and TLS
-- GitHub Actions builds on push to main (`.github/workflows/hugo.yml`); GitHub Pages serves it.
-- The custom domain comes from `static/CNAME`, which Hugo copies into the build output.
-  Delete that file and the domain goes away.
-- DNS is hosted at Cloudflare, but the site is not proxied: the apex A records point at
-  GitHub Pages' addresses and `www` is a CNAME to the Pages host. Names resolve through
-  Cloudflare, traffic does not — responses come from GitHub.
-- Pages has Enforce HTTPS on. Both `http://` and the `www` host redirect to the apex over HTTPS.
+- GitHub Actions (`.github/workflows/hugo.yml`) builds on push to main and runs
+  `scripts/check_build.py`. It then builds the container, smoke-tests it, and deploys it to
+  Cloud Run blue-green: a new revision at 0% traffic, smoke-tested at its own URL, then
+  promoted by exact name. If the smoke test fails, the old revision keeps serving.
+  `rollback.yml` points traffic back at an earlier revision.
+- The deploy is keyless. GitHub's OIDC token is exchanged for a short-lived Google identity
+  (Workload Identity Federation); no service account key exists. Only the `cloud-run`
+  environment on `main` can use it (`infra/identities.tf`).
+- `kphutt.com` and `www` are Cloud Run domain mappings (`infra/site-domain.tf`), DNS only.
+  Google issues and renews the certificate. `www` redirects to the apex in one 301, and plain
+  `http://` redirects to HTTPS.
+- DNS is hosted at Cloudflare and is code: every record in the zone, including mail, is in
+  `infra/dns.tf`. Change records there, plan, apply (`infra/README.md`). A change in the
+  Cloudflare dashboard is put back by the next plan.
+- Alerts, not dashboards: an uptime check and a certificate-expiry check email when the site
+  is down or a certificate is running out (`infra/uptime.tf`). A billing budget takes the site
+  offline at a spending limit (`infra/cost-cutoff/`).
 - `baseURL` in `hugo.toml` decides every absolute URL in the build. The workflow deliberately
   does not pass `--baseURL`; the comment there explains why.
 
-Proxied or not, the built URLs stay correct, because they come from `baseURL` rather than from
-whatever is answering at the edge.
+The built URLs stay correct whatever answers at the edge, because they come from `baseURL`
+rather than from the request.
+
+GitHub Pages is not used any more. Do not re-enable it as a fallback: it needs the Pages DNS
+records back, and it cannot send the security headers this site relies on.
 
 ### Do not turn the DNS proxy on
-This was evaluated and rejected. The record is here so it does not get re-proposed.
+This was evaluated and rejected, first for GitHub Pages and again for Cloud Run. The record
+is here so it does not get re-proposed.
 
-Putting a reverse proxy in front of Pages breaks GitHub's certificate renewal. DNS then resolves
-to the proxy rather than to GitHub, and the ACME challenge GitHub serves over plain HTTP on port
-80 gets intercepted. Renewal fails quietly — the existing certificate is still valid, so nothing
-looks wrong for weeks. When it expires, roughly 90 days later, an SSL mode of Full (strict) means
-the proxy validates the origin certificate, finds it expired, and refuses to connect at all. The
-site goes down, and recovery is to un-proxy manually and wait for GitHub to reissue.
+Google issues and renews the certificate for a mapped name by checking, over plain HTTP on
+port 80, that the name's DNS points at Google. Putting a reverse proxy in front of the
+mapping breaks that check. DNS then resolves to the proxy, and the request meant for Google is
+intercepted. Renewal fails quietly: the existing certificate is still valid, so nothing looks
+wrong for weeks. When it expires, an SSL mode of Full (strict) means the proxy validates the
+origin certificate, finds it expired, and refuses to connect at all. The site goes down, and
+recovery is to un-proxy by hand and wait for Google to reissue.
 
-A 90-day fuse with a manual recovery step is the opposite of what this setup is for.
+A fuse of weeks or months with a manual recovery step is the opposite of what this setup is for.
+`scripts/check_infra.py` refuses a proxied production record.
 
-Proxying would also silently remove the HTTPS redirect. Today `http://` reaches GitHub directly
-and Pages redirects it. Behind a proxy the origin leg is already HTTPS, so Pages never sees a
-plain-HTTP request and never redirects; the proxy would serve the page over HTTP unless its own
-Always Use HTTPS were enabled to take over the job.
+Proxying would also take over the HTTPS redirect. Today `http://` reaches Google directly and
+is redirected there. Behind a proxy the origin leg is already HTTPS, so the origin never sees a
+plain-HTTP request; the proxy would serve the page over HTTP unless its own Always Use HTTPS
+were enabled to take over the job. It would also hide the visitor's address from the request
+log.
 
-### Security headers: what is possible here, and what is not
-GitHub Pages cannot send HTTP response headers at all. This is a platform limitation with no
-configuration behind it, and the workarounds all amount to putting something else in front of
-the site — see above for why that is not happening.
+### Security headers
+Every response, including the 404 page, carries real HTTP headers from `server/sws.toml`:
+Content-Security-Policy (with `frame-ancestors 'none'`), Strict-Transport-Security (two
+years, no `includeSubDomains`, no `preload`), X-Content-Type-Options, Referrer-Policy,
+Permissions-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy. The policy is
+`script-src 'none'` with no hashes and no `'unsafe-inline'`, because the site has no inline
+code: `layouts/partials/head.html` and `footer.html` are copies of the theme's with its inline
+scripts and style removed.
 
-Two headers have genuine in-document equivalents and are set in
-`layouts/partials/extend_head.html`:
-- **Content-Security-Policy**, via `http-equiv`. It is `script-src 'none'` with no hashes and
-  no `'unsafe-inline'`, because the site has no inline code: `layouts/partials/head.html` and
-  `footer.html` are copies of the theme's with its inline scripts and style removed.
-  `scripts/check_build.py` fails the build if inline code comes back, if the policy loosens,
-  or if the theme changes a file those copies were made from.
-- **Referrer-Policy**, via `<meta name="referrer">`.
+`scripts/check_build.py` is the gate. It fails the build if inline code comes back, if the
+header policy in `server/sws.toml` is weaker than its floor on any directive, if a required
+header goes missing, if the page loads anything from another origin, or if the theme changes a
+file those copies were made from. `scripts/smoke.py` checks a running server sends exactly
+those headers.
 
-These cannot be set and are deliberately absent rather than faked: **HSTS**,
-**X-Content-Type-Options**, **X-Frame-Options**, **Permissions-Policy**, and CSP's
-`frame-ancestors` and `report-uri`. Setting any of them with `http-equiv` does nothing except
-make the source look secure. Do not add them to the page.
-
-That rule is about the page. The Cloud Run server sends HSTS, X-Content-Type-Options,
-Permissions-Policy and CSP `frame-ancestors` as real response headers, from
-`server/sws.toml`; those are not faked, and they stay.
+The page carries no Content-Security-Policy meta tag. The header is the only policy, so there
+is one copy to keep right, and it covers what a meta tag cannot (`frame-ancestors`, and every
+response that is not HTML). `layouts/partials/extend_head.html` keeps only a
+`<meta name="referrer">` copy of the Referrer-Policy, which cannot disagree with the header.
+Do not add headers to the page with `http-equiv`: it does nothing except make the source look
+secure. Add or change a header in `server/sws.toml`.
 
 ### Other settled decisions
 - **Cloudflare's "Manage your robots.txt" stays off.** This repo generates `robots.txt` from
   `layouts/robots.txt`, under review. Letting Cloudflare manage it too would put two systems on
   one file, and the reviewed one would lose.
-- **No CAA record, deliberately.** It would pin certificate issuance to one authority, which
-  couples the domain to GitHub's choice of CA with the same silent, delayed failure as above.
+- **No CAA record, deliberately.** It would pin certificate issuance to particular authorities,
+  and Google chooses which one issues for a mapping (it says a CAA record would have to allow
+  both `pki.goog` and `letsencrypt.org`). A mismatch would fail with the same silent, delayed
+  failure as above.
   DNSSEC is enabled, which closes most of the path CAA would defend.
 
 ## Git attribution

@@ -188,7 +188,7 @@ def main() -> int:
     if not any(re.fullmatch(r"/assets/css/stylesheet\.[0-9a-f]+\.css", h) for h in loads):
         failures.append("homepage links no fingerprinted stylesheet")
 
-    # A directory without its slash redirects to the one with it, as Pages did: exactly
+    # A directory without its slash redirects to the one with it, as the site always has: exactly
     # /posts/, relative, so it stays on whichever host was asked.
     got, headers, _ = fetch(base + "/posts")
     location = headers.get("Location", "")
@@ -208,7 +208,7 @@ def main() -> int:
         failures.append("404 response is not this site's 404 page (no site stylesheet or title, or an inline <style>)")
 
     if local:
-        # www redirects to the apex, path kept, as GitHub Pages does (server/sws.toml).
+        # www redirects to the apex, path kept (server/sws.toml).
         apex = urlsplit(origin).hostname
         got, headers, _ = fetch(base + "/posts/brochure/", host="www." + apex)
         location = headers.get("Location", "")
