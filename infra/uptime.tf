@@ -8,7 +8,8 @@
 #
 # The live names are watched whoever serves them, so the same checks cover GitHub Pages
 # today, the move itself, and Cloud Run after it. www answers with a 301 to the apex, so a
-# 301 counts as healthy as well as a 200.
+# 301 counts as healthy as well as a 200. HEAD fetches headers only, so the checks add almost
+# no outbound data once Cloud Run serves the site.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
 # region counts as one execution per period. 3 names x 3 regions x one check per 5 minutes
@@ -17,7 +18,7 @@
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
 variable "uptime_hostnames" {
-  description = "Hostnames to watch over HTTPS (GET /, expect 200 or 301, valid certificate)."
+  description = "Hostnames to watch over HTTPS (HEAD /, expect 200 or 301, valid certificate)."
   type        = list(string)
   default     = ["kphutt.com", "www.kphutt.com"]
 
@@ -60,7 +61,7 @@ resource "google_monitoring_uptime_check_config" "site" {
     port           = 443
     use_ssl        = true
     validate_ssl   = true
-    request_method = "GET"
+    request_method = "HEAD"
 
     accepted_response_status_codes {
       status_value = 200
