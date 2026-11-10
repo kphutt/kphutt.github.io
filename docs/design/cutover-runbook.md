@@ -3,11 +3,12 @@
 Steps 4 and 5 of [the plan](site-move.md). Each step says how to undo it.
 
 Step 4 is code: OpenTofu creates the test name's mapping and DNS record
-(`infra/test-domain.tf`), and that file cannot touch `kphutt.com` or `www`, by design. The
-zone's production records, the apex, `www` and mail, are code too, in `infra/dns.tf` and
-nowhere else. So every step 5 DNS change below is: change the record in `infra/dns.tf`, plan,
-apply (`infra/README.md`, "Production DNS"). Never change them in the Cloudflare dashboard:
-the next plan would put them back.
+(`infra/test-domain.tf`), and that file cannot touch `kphutt.com` or `www`, by design. Step 5
+is code too: the ownership proof for `kphutt.com` and the mappings for the apex and `www` are
+in `infra/site-domain.tf`, and the zone's production records, the apex, `www` and mail, are in
+`infra/dns.tf` and nowhere else. So every step 5 DNS change below is: change the record in
+`infra/dns.tf`, plan, apply (`infra/README.md`, "Production DNS"). Never change them in the
+Cloudflare dashboard: the next plan would put them back.
 
 Every `gcloud` command names its project and region explicitly. Set them once in the shell
 first, so a different default project can never receive a mapping:
@@ -49,7 +50,7 @@ nothing else about the guards:
 The check fails if only one of them changes, and it refuses `prevent_destroy = false` on
 `cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. They stay unlocked through
 the watch, so a rollback is a plain revert of the record lines; then a pull request sets both
-lines back to `true` (option A step 4, option D step 5). A rollback after that carries the
+lines back to `true` (option A, pull request C; option D step 5). A rollback after that carries the
 same two-line unlock.
 
 ## Step 4: prove it on `next.kphutt.com`
@@ -95,35 +96,195 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 
 ## Step 5 under option A: the apex, by domain mapping
 
-Only after step 4 is recorded and the decision is made.
+Only after step 4 is recorded and the decision is made. Three pull requests (A, B, C), applied by
+hand in order, each from `infra/` with `CLOUDFLARE_API_TOKEN` set and the Site Verification
+scope signed in (`infra/README.md`, "The test name", step 3). Each plan is saved and read
+before it is applied:
 
-1. Map both names:
+```bash
+mise exec -- tofu plan -out=site.tfplan
+mise exec -- tofu apply site.tfplan
+```
+
+### The certificate gap: read this before choosing a time
+
+Google issues the certificate for a mapped name only after that name's DNS points at
+Google. Its check reaches the name over plain HTTP on port 80, so nothing done in advance
+can make the certificate exist before the switch: there is no way to pre-issue it for a
+domain mapping. (A load balancer can do that, with a DNS authorization, but that is
+option C and costs about $18 a month.) Creating the mappings first, in pull request A, only
+takes the mapping setup off the clock.
+
+So from the moment resolvers see the new records until the certificate is issued,
+`https://kphutt.com` and `https://www.kphutt.com` fail with a certificate error for every
+visitor sent to Google. How long:
+
+- Google's page: "usually about 15 minutes but can take up to 24 hours".
+- Measured on `next.kphutt.com`, from the mapping's own status: the mapping and its records
+  were created at 20:21 UTC on 2026-11-09, and the certificate was ready at 21:18. That is
+  56 minutes.
+
+Expect about an hour, and plan for longer. Switch at a quiet time, and stay at the
+keyboard until the certificate is ready.
+
+Nothing in the zone blocks issuance: there is no CAA record (Google's page says one would
+have to allow `pki.goog` and `letsencrypt.org`), the records are DNS only, so port 80
+reaches Google, and nothing proxies the validation request.
+
+Visitors whose resolvers still hold the old records keep reaching GitHub Pages for up to
+five minutes (TTL 300), and Pages serves them correctly: `static/CNAME` still names
+`kphutt.com`, and Pages still holds its certificate for `kphutt.com` and `www`.
+
+### Pull request A: prove ownership and create the mappings (no traffic moves)
+
+`infra/site-domain.tf`: a CNAME at `<token>.kphutt.com` that proves ownership of
+`kphutt.com` to Google, the ownership record itself, and the mappings for `kphutt.com` and
+`www.kphutt.com`. It also lets `infra/dns.tf` hold a web record with `id = null` (a record
+the next apply creates), which pull request B needs for the apex's new AAAA records.
+
+1. Merge, then plan. **Expected plan:** `4 to add, 0 to change, 0 to destroy`. The four are
+   `cloudflare_dns_record.apex_verification` (a CNAME named `<token>.kphutt.com`,
+   pointing at `gv-….dv.googlehosted.com`),
+   `google_site_verification_web_resource.apex`, and
+   `google_cloud_run_domain_mapping.apex` and `.www`. Nothing in `cloudflare_dns_record.web`,
+   `.mail` or `.test` may appear.
+2. Apply. Each mapping checks that Google asks for exactly its list in `site-domain.tf`:
+   the eight A and AAAA addresses for the apex, one CNAME to `ghs.googlehosted.com` for
+   `www`. If Google asks for anything else, the apply stops at that mapping with a message
+   saying so. Read what it asked for, and do not go on to B until the list is right:
    ```bash
-   gcloud beta run domain-mappings create --service site --domain kphutt.com --project "$PROJECT" --region "$REGION"
-   gcloud beta run domain-mappings create --service site --domain www.kphutt.com --project "$PROJECT" --region "$REGION"
+   gcloud beta run domain-mappings describe --domain kphutt.com --project "$PROJECT" --region "$REGION"
+   gcloud beta run domain-mappings describe --domain www.kphutt.com --project "$PROJECT" --region "$REGION"
    ```
-   Note the A and AAAA records the apex mapping prints.
-2. Change the record in `infra/dns.tf`, plan, apply: replace the four GitHub A records with
-   the mapping's A and AAAA records, and point `www` at `ghs.googlehosted.com`. DNS only (see
-   the ADR on why not a flattened CNAME). Update `tests/dns.tftest.hcl` to match in the same
-   pull request, and unlock the web records in it ("Unlocking the web records" above).
-   Read the plan: it must touch only `cloudflare_dns_record.web`, never
-   `cloudflare_dns_record.mail`.
-   **Rollback:** restore the table above exactly, and delete the AAAA records: revert that
-   change, plan, apply. GitHub Pages
-   is still configured and still holds a valid certificate for `kphutt.com`, so it serves
-   again as soon as resolvers see the old records (five minutes). That certificate cannot
-   renew while DNS points elsewhere, so this fast rollback only lasts as long as it does
-   (check its expiry before cutting over); after that, a rollback also waits for GitHub to
-   reissue it.
-3. Watch: `python scripts/smoke.py https://kphutt.com` once the certificate is active, and
-   then again over a few days. Check `www` still redirects to the apex, path included, as it
-   does on Pages: `curl -sI https://www.kphutt.com/posts/brochure/` must answer 301 with
-   `Location: https://kphutt.com/posts/brochure/` (the server does this by host name,
-   `server/sws.toml`). Keep Pages configured during this time, so the rollback stays instant.
-4. Once the watch is over, lock the web records again: a pull request that sets both lines
-   from "Unlocking the web records" back to `true`. Its plan changes nothing.
-5. Retire Pages, as below.
+   Both show `DomainRoutable` true and `CertificateProvisioned` not yet true. That is
+   expected: the certificate waits for B.
+3. Check the test name is unchanged: plan again and expect `No changes`. Its mapping was made
+   when only `next.kphutt.com` was verified. If Google now asks it for a CNAME instead (it
+   is a subdomain of a verified name now), the mapping's own check stops the plan; then set
+   `verify_test_hostname = false` in `terraform.tfvars`, or switch the test name off.
+
+**Undo:** the mappings and the ownership record carry `prevent_destroy`, so removing them is
+a pull request that lifts it and deletes them. Until B is applied, nothing points at them.
+
+Apply B soon after A, the same day if possible. A mapping whose DNS points elsewhere keeps
+failing its certificate check, and Google does not say how its retries slow down.
+
+### Pull request B: the switch (traffic moves)
+
+Opened once A is merged and applied (it is built on A). Two commits, both in
+`infra/dns.tf`, `scripts/check_infra.py` and `infra/tests/dns.tftest.hcl`:
+
+1. The unlock: the two lines in "Unlocking the web records" above.
+2. The switch, in `local.web_records`:
+   - the four apex A records keep their keys and Cloudflare ids, and their addresses become
+     Google's four (`216.239.{32,34,36,38}.21`). Same record, new value, so Cloudflare
+     changes each in place;
+   - four new AAAA records for the apex (`2001:4860:4802:{32,34,36,38}::15`), with
+     `id = null`: they do not exist yet, so nothing imports them, and the apply creates
+     them;
+   - `www` keeps its key and id, and its CNAME points at `ghs.googlehosted.com`, in place;
+   - `tests/dns.tftest.hcl` to match, plus a test that the apex records are exactly what
+     the apex mapping asks for and `www` is exactly what the `www` mapping asks for.
+
+Mail does not change. In this provider (Cloudflare 5.28) a record's type change forces a
+replacement but a content change does not, so this plan deletes nothing.
+
+1. Before merging: describe both mappings once more (A, step 2), and check the Pages
+   certificate's expiry (below). Pick a quiet hour.
+2. Merge, then plan. **Expected plan:** `4 to add, 5 to change, 0 to destroy`, all in
+   `cloudflare_dns_record.web`. To add: `web["apex-aaaa-32"]` to `web["apex-aaaa-38"]`. To
+   change, in place: `web["apex-a-108"]` to `web["apex-a-111"]` (content
+   `185.199.x.153` to `216.239.x.21`) and `web["www"]` (`kphutt.github.io` to
+   `ghs.googlehosted.com`). Any replacement, anything in `cloudflare_dns_record.mail` or
+   `.test`, or any Google resource: stop.
+3. Apply. Note the time.
+4. Watch the certificates, every few minutes:
+   ```bash
+   gcloud beta run domain-mappings describe --domain kphutt.com --project "$PROJECT" --region "$REGION" --format="value(status.conditions)"
+   gcloud beta run domain-mappings describe --domain www.kphutt.com --project "$PROJECT" --region "$REGION" --format="value(status.conditions)"
+   ```
+   Done when `CertificateProvisioned` and `Ready` are true for both.
+   **If either is not done two hours after the apply, roll back** (below), then find out
+   why with the records back on Pages.
+5. Run the checks in "After the switch" below.
+
+**Rollback.** Put the switch commit's record lines back, and nothing else: the web records
+stay unlocked, because the rollback deletes the four AAAA records.
+
+```bash
+git switch -c fix/cutover-rollback origin/main
+git revert --no-commit <B's merge commit>
+git checkout origin/main -- scripts/check_infra.py   # keep WEB_PREVENT_DESTROY = "false"
+# in infra/dns.tf, put prevent_destroy = false back on cloudflare_dns_record.web
+python scripts/check_infra.py
+```
+
+Open it as a `fix:` pull request, merge, plan, apply. **Expected plan:**
+`0 to add, 5 to change, 4 to destroy`, all in `cloudflare_dns_record.web`: the four apex A
+records back to GitHub's addresses and `www` back to `kphutt.github.io`, in place, and the
+four AAAA records deleted. In a hurry, the same edit by hand in `dns.tf` (paste back the
+`web_records` from before B) is just as good, applied first and reviewed after.
+
+It takes effect as resolvers drop the Google records: within five minutes (TTL 300) for
+most visitors. GitHub Pages serves them at once, because it never stopped being configured
+for `kphutt.com` (`static/CNAME`) and still holds its certificate.
+
+That rollback is instant only while the Pages certificate is valid. Measured on
+2026-11-10, it expires **2027-02-01**. GitHub cannot renew it while DNS points at Google,
+so after that date a rollback also waits for GitHub to issue a new one, with HTTPS broken
+meanwhile. Check before switching:
+
+```bash
+python -c "import ssl,socket; s=ssl.create_default_context().wrap_socket(socket.create_connection(('kphutt.com',443)),server_hostname='kphutt.com'); print(s.getpeercert()['notAfter'])"
+```
+
+### After the switch
+
+Once both certificates are ready:
+
+1. `python scripts/smoke.py https://kphutt.com`: every page in the sitemap answers 200,
+   `robots.txt`, `llms.txt`, `sitemap.xml`, the RSS feed and the og-image answer with
+   their content types, the missing-page 404 is the site's own page, and every response
+   carries the headers in `server/sws.toml`.
+2. `www` redirects to the apex with the path and query kept, in one 301:
+   `curl -sI "https://www.kphutt.com/posts/brochure/?x=1"` answers `301` with
+   `Location: https://kphutt.com/posts/brochure/?x=1`.
+3. Plain HTTP redirects to HTTPS: `curl -sI http://kphutt.com/posts/brochure/` and
+   `curl -sI http://www.kphutt.com/` answer with a redirect to `https://`.
+4. The link preview: paste `https://kphutt.com/` into a social site's post preview (for
+   example LinkedIn's Post Inspector) and check the og-image shows. The image is sent with
+   `Cross-Origin-Resource-Policy: same-origin`; that only stops browsers embedding it on
+   other sites, and preview services fetch it from their servers, so it should show. If it
+   does not, that header is the first suspect.
+5. The request log: make one request with a made-up user agent, and find it in the
+   `site-requests` log bucket, as in step 4.
+6. SSL Labs on `kphutt.com` (results not published): expect B, for TLS 1.0 and 1.1, as on
+   the test name. Anything worse: compare with the ADR.
+7. Mozilla HTTP Observatory on `kphutt.com`: expect A+.
+8. Over the next few days, run `python scripts/smoke.py https://kphutt.com` again. Keep
+   Pages configured during this time, so the rollback stays instant.
+
+### Pull request C: lock the web records again
+
+After the watch. In `infra/dns.tf`, write the Cloudflare ids of the four AAAA records into
+their lines, so a fresh state adopts them rather than creating copies (read each from state:
+`mise exec -- tofu state show 'cloudflare_dns_record.web["apex-aaaa-32"]'`, the `id` line),
+and set both lines from "Unlocking the web records" back to `true`. **Expected plan:**
+`No changes`. A rollback after C carries the same two-line unlock.
+
+### Later: pull request D, once Pages is retired
+
+Not before the TLS question in the ADR is revisited. These go stale at the switch and are
+updated when Pages is switched off ("Retiring Pages" below), not before, because Pages stays
+the rollback target until then:
+
+- `AGENTS.md`: "What This Is" and "Deployment, DNS and TLS" still describe Pages serving
+  the site, `static/CNAME` and the Pages DNS records; "Do not turn the DNS proxy on" and
+  "Security headers" are written about Pages.
+- `static/CNAME`, and the `CNAME` check in `scripts/check_build.py`.
+- `server/sws.toml`: the comment on the www redirect says it is only reached if www is
+  pointed at the service.
+- `docs/design/cutover-runbook.md`: "The records as they are today".
 
 ## Step 5 under option D: the apex, through a Cloudflare Worker
 
@@ -146,8 +307,8 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
    original records are DNS only), and delete the redirect rule. The Worker route then
    matches nothing that reaches Cloudflare, so it can stay until it is cleaned up. The
    same certificate caveat as option A applies to the speed of this rollback.
-4. Watch, exactly as in option A step 3, including the `www` redirect.
-5. Lock the web records again, as in option A step 4.
+4. Watch, exactly as in option A, "After the switch", including the `www` redirect.
+5. Lock the web records again, as in option A, pull request C.
 6. Retire Pages, as below.
 
 ## Retiring Pages (either option)

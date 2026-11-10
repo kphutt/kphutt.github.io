@@ -13,11 +13,13 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `monitoring.tf` | The billing budget alert, and the request-log bucket, sink and exclusion |
 | `dns.tf` | The zone's production DNS records at Cloudflare: the apex, `www`, mail. The only file that may manage them |
 | `test-domain.tf` | The test name: domain mapping, its DNS record at Cloudflare, ownership proof. Off by default |
+| `site-domain.tf` | The live names: ownership proof for `kphutt.com`, and the mappings for `kphutt.com` and `www` |
 | `outputs.tf` | The values the deploy workflow needs as repository variables |
 | `seed.py` | The one-time steps OpenTofu cannot do: the project, the GitHub environment, the repository variables |
 | `tests/plan.tftest.hcl` | Offline plan tests with mocked providers |
 | `tests/dns.tftest.hcl` | Offline tests that pin every production record's value |
 | `tests/test-domain.tftest.hcl` | Offline tests that the test name can never be `kphutt.com` or `www` |
+| `tests/site-domain.tftest.hcl` | Offline tests of the live names' ownership record and mappings |
 
 ## Who changes what
 
@@ -128,11 +130,10 @@ message saying so; read the mapping with
 review.
 
 Google's mapping page says to verify the parent domain, `kphutt.com`. Verifying only the
-test name was enough: Cloud Run accepted the mapping. If that ever stops working, set
-`verify_test_hostname = false`, verify `kphutt.com` once with
-`gcloud domains verify kphutt.com` (Search Console asks for a TXT record on `kphutt.com`,
-added by hand: that record is on the apex, so this code will not create it), and apply
-again. The test name is then a subdomain of the verified name, so it gets one CNAME to
+test name was enough: Cloud Run accepted the mapping. `site-domain.tf` now verifies
+`kphutt.com` as well (see "The live names"). If the test name's mapping then asks for a
+CNAME, because it has become a subdomain of a verified name, its check stops the plan; set
+`verify_test_hostname = false` and apply again. The test name then gets one CNAME to
 `ghs.googlehosted.com` instead.
 
 To switch it off, set `test_domain_enabled = false` and apply: the test name's records, the
@@ -141,6 +142,43 @@ deleting it, because Google's API refuses to delete it while the CNAME still exi
 re-checks ownership from time to time and drops it once the CNAME is gone.
 
 `kphutt.com` itself is not here. Its records are in `dns.tf`.
+
+## The live names (`site-domain.tf`)
+
+The mappings that serve `kphutt.com` and `www.kphutt.com` from Cloud Run, and the proof
+that the account running OpenTofu owns `kphutt.com`. Always on. Applying it moves no
+traffic: a mapping only serves once DNS points at it, and the apex and `www` records are in
+`dns.tf`, changed only by the cutover (`docs/design/cutover-runbook.md`, step 5).
+
+The apply:
+
+1. asks Google for an ownership token for `kphutt.com` (the DNS_CNAME method) and creates
+   the CNAME it names, at `<token>.kphutt.com`. A new name, so it touches no existing
+   record. The method that puts a TXT record on the apex is not used: the apex's TXT
+   records are mail's (SPF), in `dns.tf`;
+2. has Google check it, which makes the account running OpenTofu a verified owner of
+   `kphutt.com`;
+3. creates the two mappings, and checks each asks for exactly its list: Google's four A and
+   four AAAA addresses for the apex, one CNAME to `ghs.googlehosted.com` for `www` (a
+   subdomain of a verified name). Anything else stops the apply. Those lists are the
+   records the cutover writes into `dns.tf`.
+
+### Guards on the ownership record
+
+The ownership record is the DNS record that proves to Google you own kphutt.com. Cloud Run
+needed that proof to map kphutt.com and www, and Google re-checks it from time to time.
+Three guards protect it and the two mappings:
+
+- A precondition limits its name to one label of letters, digits and hyphens directly under
+  kphutt.com, never `www` or the test name `next`.
+- `scripts/check_infra.py` refuses the record outside `site-domain.tf`, and requires the
+  Site Verification resource and both mappings in it.
+- `prevent_destroy` stops OpenTofu from deleting the record or either mapping.
+
+None of these stops a change of account, though. The record contains a code from the Google
+account that runs OpenTofu. Applying another account's plan swaps in that account's code and
+removes your proof. Run OpenTofu as the account that set this up, and stop if a plan changes
+this record.
 
 ## Production DNS (`dns.tf`)
 
@@ -155,6 +193,10 @@ resources:
 
 All are DNS only. They are two resources, not one, because `prevent_destroy` covers a whole
 resource: the cutover has to unlock the web records without unlocking mail.
+
+A web record may be written before it exists, with `id = null`: its import is skipped and
+the apply creates it. The cutover uses this for the apex's AAAA records, and the pull request
+after it writes their ids in. Mail records always have an id.
 
 They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
 so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
