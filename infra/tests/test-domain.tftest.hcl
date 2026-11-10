@@ -476,6 +476,7 @@ run "on_without_a_zone_id_is_refused" {
 
   expect_failures = [
     cloudflare_dns_record.verification,
-    cloudflare_dns_record.production,
+    cloudflare_dns_record.web,
+    cloudflare_dns_record.mail,
   ]
 }

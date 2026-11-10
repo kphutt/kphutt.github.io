@@ -144,9 +144,17 @@ re-checks ownership from time to time and drops it once the CNAME is gone.
 
 ## Production DNS (`dns.tf`)
 
-Every record in the kphutt.com zone, except the test name's, is in `dns.tf`: the four apex A
-records and the `www` CNAME that serve the live site (GitHub Pages, until the cutover), and
-the mail records (seven MX, and the SPF, DKIM and DMARC TXT records). All are DNS only.
+Every record in the kphutt.com zone, except the test name's, is in `dns.tf`, as two
+resources:
+
+- `cloudflare_dns_record.web` (list `local.web_records`): the four apex A records and the
+  `www` CNAME that serve the live site (GitHub Pages, until the cutover). These are the
+  records the cutover replaces.
+- `cloudflare_dns_record.mail` (list `local.mail_records`): seven MX, and the SPF, DKIM and
+  DMARC TXT records.
+
+All are DNS only. They are two resources, not one, because `prevent_destroy` covers a whole
+resource: the cutover has to unlock the web records without unlocking mail.
 
 They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
 so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
@@ -174,13 +182,27 @@ Never change these records in the Cloudflare dashboard: the next plan would put 
 
 The guards:
 
-- `prevent_destroy` is on every production record, so any plan that would delete one fails.
-  To delete or replace a record, a reviewed pull request lifts it for that record.
-- `scripts/check_infra.py` fails unless `dns.tf` holds only this one resource, over a fixed
-  list with one literal line per record, DNS only, automatic TTL and `prevent_destroy`; only
-  `dns.tf` may import a Cloudflare record; and no other file may use that list. The test
-  name and anything under it are refused here, and every other file is still refused the
-  apex and `www`.
+- `prevent_destroy` is on both resources, so any plan that would delete or replace a
+  production record fails.
+  - Mail: never lifted. `scripts/check_infra.py` requires `prevent_destroy = true` on
+    `cloudflare_dns_record.mail` and has no setting that allows anything else. Deleting a
+    mail record means changing that rule, in review.
+  - Web: lifted only for the cutover, by one pull request that changes exactly two lines,
+    `prevent_destroy = true` to `false` on `cloudflare_dns_record.web` in `dns.tf`, and
+    `WEB_PREVENT_DESTROY = "true"` to `"false"` in `scripts/check_infra.py`. Either line alone
+    fails the check. A later pull request sets both back (`docs/design/cutover-runbook.md`
+    says when).
+- `scripts/check_infra.py` fails unless `dns.tf` holds only these two resources, each over its
+  own fixed list with one literal line per record and its own import block, DNS only,
+  automatic TTL and `prevent_destroy` as above. The web list may hold only A, AAAA and CNAME
+  records named `kphutt.com` or `www.kphutt.com`; the mail list only MX and TXT, so a mail
+  record cannot be moved into the web list to unlock it. Only `dns.tf` may import a Cloudflare
+  record, and no other file may use either list. The test name and anything under it are
+  refused here, and every other file is still refused the apex and `www`.
+- Nothing may loosen those pins: `dns.tf` may not use `ignore_changes` or
+  `replace_triggered_by`, and no `moved` or `removed` block may be in `dns.tf` or name either
+  resource from another file (either would take a record out from under its pins without a
+  plan deleting it).
 - `tests/dns.tftest.hcl` pins every name, type, value and MX priority.
 
 ## Cost

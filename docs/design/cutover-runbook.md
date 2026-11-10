@@ -30,10 +30,27 @@ to lower in advance: a change, or its undo, reaches resolvers within five minute
 | `kphutt.com` | A | `185.199.111.153` | DNS only |
 | `www.kphutt.com` | CNAME | `kphutt.github.io` | DNS only |
 
-These four A records and the CNAME are GitHub Pages, and they are the `apex-a-*` and `www`
-entries in `infra/dns.tf`. **Putting exactly these back is the rollback**, at any point:
-revert the change to `infra/dns.tf`, plan, apply. Do not touch the MX and TXT records: they
-are for mail. (Cloudflare stores these TTLs as 1, "automatic", which it serves as 300.)
+These four A records and the CNAME are GitHub Pages, and they are `local.web_records` in
+`infra/dns.tf` (resource `cloudflare_dns_record.web`). **Putting exactly these back is the
+rollback**, at any point: revert the change to `infra/dns.tf`, plan, apply. Do not touch the
+MX and TXT records (`local.mail_records`): they are for mail, and their `prevent_destroy`
+never comes off. (Cloudflare stores these TTLs as 1, "automatic", which it serves as 300.)
+
+### Unlocking the web records
+
+Replacing a record deletes the old one, and `prevent_destroy` on `cloudflare_dns_record.web`
+refuses that. So the cutover pull request below also changes exactly these two lines, and
+nothing else about the guards:
+
+- `infra/dns.tf`, in `resource "cloudflare_dns_record" "web"`: `prevent_destroy = true`
+  becomes `prevent_destroy = false`.
+- `scripts/check_infra.py`: `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
+
+The check fails if only one of them changes, and it refuses `prevent_destroy = false` on
+`cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. They stay unlocked through
+the watch, so a rollback is a plain revert of the record lines; then a pull request sets both
+lines back to `true` (option A step 4, option D step 5). A rollback after that carries the
+same two-line unlock.
 
 ## Step 4: prove it on `next.kphutt.com`
 
@@ -89,9 +106,9 @@ Only after step 4 is recorded and the decision is made.
 2. Change the record in `infra/dns.tf`, plan, apply: replace the four GitHub A records with
    the mapping's A and AAAA records, and point `www` at `ghs.googlehosted.com`. DNS only (see
    the ADR on why not a flattened CNAME). Update `tests/dns.tftest.hcl` to match in the same
-   pull request. Replacing a record means deleting one, which `prevent_destroy` refuses, so
-   that pull request lifts it for the records being replaced (`infra/README.md`, "Production
-   DNS"). Read the plan: it must touch only the apex and `www` records.
+   pull request, and unlock the web records in it ("Unlocking the web records" above).
+   Read the plan: it must touch only `cloudflare_dns_record.web`, never
+   `cloudflare_dns_record.mail`.
    **Rollback:** restore the table above exactly, and delete the AAAA records: revert that
    change, plan, apply. GitHub Pages
    is still configured and still holds a valid certificate for `kphutt.com`, so it serves
@@ -104,7 +121,9 @@ Only after step 4 is recorded and the decision is made.
    does on Pages: `curl -sI https://www.kphutt.com/posts/brochure/` must answer 301 with
    `Location: https://kphutt.com/posts/brochure/` (the server does this by host name,
    `server/sws.toml`). Keep Pages configured during this time, so the rollback stays instant.
-4. Retire Pages, as below.
+4. Once the watch is over, lock the web records again: a pull request that sets both lines
+   from "Unlocking the web records" back to `true`. Its plan changes nothing.
+5. Retire Pages, as below.
 
 ## Step 5 under option D: the apex, through a Cloudflare Worker
 
@@ -117,8 +136,10 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
    Analytics: automatic injection off for this site.
 3. Change the records in `infra/dns.tf`, plan, apply: replace the four GitHub A records
    with one proxied placeholder record for the apex (`AAAA 100::`, see the ADR).
-   `scripts/check_infra.py` refuses a proxied production record, so that rule changes in the
-   same review. For `www`: replace its CNAME with a proxied placeholder, and
+   Unlock the web records in the same pull request ("Unlocking the web records" above).
+   `scripts/check_infra.py` refuses a proxied production record, so its `proxied` rule
+   changes for `cloudflare_dns_record.web` only, in the same review; mail stays DNS only.
+   For `www`: replace its CNAME with a proxied placeholder, and
    add a Single Redirect rule sending `www.kphutt.com/*` to `https://kphutt.com/${1}` with
    a 301, path and query kept.
    **Rollback:** restore the table above exactly, which also turns the proxy off (the
@@ -126,7 +147,8 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
    matches nothing that reaches Cloudflare, so it can stay until it is cleaned up. The
    same certificate caveat as option A applies to the speed of this rollback.
 4. Watch, exactly as in option A step 3, including the `www` redirect.
-5. Retire Pages, as below.
+5. Lock the web records again, as in option A step 4.
+6. Retire Pages, as below.
 
 ## Retiring Pages (either option)
 

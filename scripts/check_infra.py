@@ -111,11 +111,18 @@ def check_deployer_commands() -> bool:
 # and each is held to its own rule.
 #
 # infra/dns.tf (PRODUCTION_FILE) holds the zone's production records, adopted by import
-# blocks: one resource, cloudflare_dns_record.production, over local.production_records, a
-# fixed list of one-line entries with every value literal. It is the only file that may
-# import a Cloudflare object, the only file that may use that list, and its records are DNS
-# only and carry prevent_destroy. So a change to the live site's DNS is always a changed line
-# in that file. No entry may be the test name or under it: those belong to test-domain.tf.
+# blocks, as two resources (PRODUCTION below), each over its own fixed list of one-line
+# entries with every value literal, and each with its own import block:
+#
+#   - cloudflare_dns_record.web over local.web_records: the apex and www (A, AAAA, CNAME);
+#   - cloudflare_dns_record.mail over local.mail_records: MX and TXT.
+#
+# It is the only file that may import a Cloudflare object, the only file that may use those
+# lists, and its records are DNS only and carry prevent_destroy. So a change to the live site's
+# DNS is always a changed line in that file. No entry may be the test name or under it: those
+# belong to test-domain.tf. Nothing may loosen these pins: dns.tf holds no ignore_changes and
+# no replace_triggered_by, and no moved or removed block may be in dns.tf or name the two
+# resources anywhere else.
 #
 # Every other Cloudflare resource is held to this:
 #
@@ -166,23 +173,53 @@ PRODUCTION_FILE = "dns.tf"
 ZONE = "kphutt.com"
 # The default test_hostname (variables.tf). Production entries stay off it and out from under it.
 TEST_NAME = "next.kphutt.com"
-# The lines cloudflare_dns_record.production must carry, exactly once each.
-PRODUCTION_RULES = {
-    "for_each": "local.production_records",
-    "zone_id": "var.cloudflare_zone_id",
-    "name": "each.value.name",
-    "type": "each.value.type",
-    "content": "each.value.content",
-    "priority": "each.value.priority",
-    "ttl": "1",
-    "proxied": "false",
-    "prevent_destroy": "true",
+# prevent_destroy on the web records (the apex and www). The cutover replaces those records,
+# which deletes the old ones, so the cutover pull request sets this to "false" together with
+# prevent_destroy = false on cloudflare_dns_record.web in dns.tf, and the pull request after
+# the apply sets both back to "true" (docs/design/cutover-runbook.md). Two lines, both in
+# review. The mail records have no such setting: their prevent_destroy is always "true".
+WEB_PREVENT_DESTROY = "true"
+# The two production resources: the list each one runs over, the record types that list may
+# hold, the names it may hold (None: any name in the zone), and its prevent_destroy.
+PRODUCTION = {
+    "web": {"list": "web_records", "types": {"A", "AAAA", "CNAME"},
+            "names": {ZONE, "www." + ZONE}, "prevent_destroy": WEB_PREVENT_DESTROY},
+    "mail": {"list": "mail_records", "types": {"MX", "TXT"},
+             "names": None, "prevent_destroy": "true"},
 }
-PRODUCTION_IMPORT = {
-    "for_each": "var.import_production_dns ? local.production_records : {}",
-    "to": "cloudflare_dns_record.production[each.key]",
-    "id": '"${var.cloudflare_zone_id}/${each.value.id}"',
-}
+
+
+def production_rules(resource: str) -> dict[str, str]:
+    """The lines cloudflare_dns_record.<resource> must carry, exactly once each."""
+    return {
+        "for_each": f"local.{PRODUCTION[resource]['list']}",
+        "zone_id": "var.cloudflare_zone_id",
+        "name": "each.value.name",
+        "type": "each.value.type",
+        "content": "each.value.content",
+        "priority": "each.value.priority",
+        "ttl": "1",
+        "proxied": "false",
+        "prevent_destroy": PRODUCTION[resource]["prevent_destroy"],
+    }
+
+
+def production_import(resource: str) -> dict[str, str]:
+    """The lines the import block for cloudflare_dns_record.<resource> must carry."""
+    return {
+        "for_each": f"var.import_production_dns ? local.{PRODUCTION[resource]['list']} : {{}}",
+        "to": f"cloudflare_dns_record.{resource}[each.key]",
+        "id": '"${var.cloudflare_zone_id}/${each.value.id}"',
+    }
+
+
+# Lifecycle arguments that would let a plan drift from, or replace, a pinned record without a
+# changed line in a record list. cloud-run.tf has a reviewed ignore_changes of its own; these
+# are refused in dns.tf only.
+LOOSENERS = re.compile(r"\b(ignore_changes|replace_triggered_by)\b")
+# A moved block re-homes a record in state, and a removed block drops it from state, so either
+# would take a record out from under its pins without a plan ever deleting it.
+STATE_BLOCK = re.compile(r"^\s*(moved|removed)\s*\{", re.M)
 PRODUCTION_ENTRY = re.compile(
     r'^\s*"([a-z0-9-]+)"\s*=\s*\{\s*id\s*=\s*"([0-9a-f]{32})"\s*,\s*name\s*=\s*"([^"]+)"\s*,'
     r'\s*type\s*=\s*"([A-Z]+)"\s*,\s*content\s*=\s*"((?:[^"\\]|\\")*)"\s*,\s*priority\s*=\s*(null|[0-9]+)\s*\}\s*$'
@@ -206,42 +243,67 @@ def production_value_ok(rtype: str, content: str, priority: str) -> bool:
     return False
 
 
-def check_production_list(texts: dict[str, str]) -> list[str]:
-    """local.production_records: defined once, in dns.tf, as one literal line per record."""
+def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
+    """local.<list>: defined once, in dns.tf, as one literal line per record of its kind."""
+    rule = PRODUCTION[resource]
+    lst = rule["list"]
     problems = []
     for name, text in texts.items():
-        if name != PRODUCTION_FILE and "production_records" in text:
-            problems.append(f"{name}: local.production_records may only be used in {PRODUCTION_FILE}")
+        if name != PRODUCTION_FILE and re.search(rf"\b{lst}\b", text):
+            problems.append(f"{name}: local.{lst} may only be used in {PRODUCTION_FILE}")
     text = texts.get(PRODUCTION_FILE, "")
-    m = re.search(r"^\s*production_records\s*=\s*\{", text, re.M)
+    m = re.search(rf"^\s*{lst}\s*=\s*\{{", text, re.M)
     if not m:
-        return problems + [f"{PRODUCTION_FILE}: local.production_records is missing"]
-    if len(re.findall(r"^\s*production_records\s*=", text, re.M)) != 1:
-        return problems + [f"{PRODUCTION_FILE}: local.production_records is defined more than once"]
+        return problems + [f"{PRODUCTION_FILE}: local.{lst} is missing"]
+    if len(re.findall(rf"^\s*{lst}\s*=", text, re.M)) != 1:
+        return problems + [f"{PRODUCTION_FILE}: local.{lst} is defined more than once"]
     seen = 0
     for line in block_body(text, m.end()).splitlines():
         if not line.strip() or line.strip().startswith("#"):
             continue
         e = PRODUCTION_ENTRY.match(line)
         if not e:
-            problems.append("local.production_records: not a one-line { id, name, type, content, priority } "
+            problems.append(f"local.{lst}: not a one-line {{ id, name, type, content, priority }} "
                             f"entry: {line.strip()[:80]}")
             continue
         key, _, rname, rtype, content, priority = e.groups()
         seen += 1
         if not (rname == ZONE or rname.endswith("." + ZONE)):
-            problems.append(f"local.production_records[{key}]: {rname} is not in the {ZONE} zone")
+            problems.append(f"local.{lst}[{key}]: {rname} is not in the {ZONE} zone")
         if rname == TEST_NAME or rname.endswith("." + TEST_NAME):
-            problems.append(f"local.production_records[{key}]: {rname} belongs to test-domain.tf, not here")
+            problems.append(f"local.{lst}[{key}]: {rname} belongs to test-domain.tf, not here")
+        if rtype not in rule["types"]:
+            problems.append(f"local.{lst}[{key}]: a {rtype} record does not belong in this list "
+                            f"(only {sorted(rule['types'])})")
+        if rule["names"] is not None and rname not in rule["names"]:
+            problems.append(f"local.{lst}[{key}]: {rname} does not belong in this list "
+                            f"(only {sorted(rule['names'])})")
         try:
             good = production_value_ok(rtype, content, priority)
         except ValueError:
             good = False
         if not good:
-            problems.append(f"local.production_records[{key}]: {rtype} {content[:40]!r} "
+            problems.append(f"local.{lst}[{key}]: {rtype} {content[:40]!r} "
                             f"priority {priority} is not allowed")
     if not seen:
-        problems.append("local.production_records is empty")
+        problems.append(f"local.{lst} is empty")
+    return problems
+
+
+def check_production_loosening(texts: dict[str, str]) -> list[str]:
+    """Nothing may defeat the production pins: no lifecycle escape hatch, no state surgery."""
+    problems = []
+    for name, text in texts.items():
+        # Drop comments, which explain these words. No string in infra/ holds a "#".
+        code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+        if name == PRODUCTION_FILE:
+            problems += [f"{name}: {m.group(1)} is not allowed here (it would loosen the production pins)"
+                         for m in LOOSENERS.finditer(code)]
+        for m in STATE_BLOCK.finditer(code):
+            body = block_body(code, m.end())
+            if name == PRODUCTION_FILE or re.search(
+                    rf"cloudflare_dns_record\.({'|'.join(PRODUCTION)})\b", body):
+                problems.append(f"{name}: a {m.group(1)} block may not touch the production records")
     return problems
 
 
@@ -300,12 +362,19 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
     problems += [f"{f.name}: JSON configuration is not covered by this rule; write HCL"
                  for f in sorted(infra.glob("*.tf.json"))]
     texts = {f.name: f.read_text(encoding="utf-8") for f in sorted(infra.glob("*.tf"))}
-    production = 0
+    production = dict.fromkeys(PRODUCTION, 0)
+    imports = dict.fromkeys(PRODUCTION, 0)
     for name, text in texts.items():
         for m in IMPORT.finditer(text):
             body = block_body(text, m.end())
             if name == PRODUCTION_FILE:
-                problems += check_exact_lines(f"{name}: import", body, PRODUCTION_IMPORT)
+                targets = re.findall(r"cloudflare_dns_record\.(\w+)\[", body)
+                if len(targets) != 1 or targets[0] not in PRODUCTION:
+                    problems.append(f"{name}: an import block must adopt one of "
+                                    f"{sorted(PRODUCTION)}, got {targets}")
+                    continue
+                imports[targets[0]] += 1
+                problems += check_exact_lines(f"{name}: import", body, production_import(targets[0]))
             elif "cloudflare_" in body:
                 problems.append(f"{name}: an import block adopts an existing Cloudflare object "
                                 f"(only {PRODUCTION_FILE} may)")
@@ -314,12 +383,12 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
             where = f"{name}: {kind} {rtype}.{rname}"
             if name == PRODUCTION_FILE:
                 # dns.tf holds the production records and nothing else.
-                if (kind, rtype, rname) != ("resource", "cloudflare_dns_record", "production"):
-                    problems.append(f"{where}: {PRODUCTION_FILE} may hold only resource "
-                                    "cloudflare_dns_record.production")
+                if kind != "resource" or rtype != "cloudflare_dns_record" or rname not in PRODUCTION:
+                    problems.append(f"{where}: {PRODUCTION_FILE} may hold only the resources "
+                                    + ", ".join(f"cloudflare_dns_record.{r}" for r in PRODUCTION))
                     continue
-                production += 1
-                problems += check_exact_lines(where, block_body(text, m.end()), PRODUCTION_RULES)
+                production[rname] += 1
+                problems += check_exact_lines(where, block_body(text, m.end()), production_rules(rname))
                 continue
             if not rtype.startswith("cloudflare_"):
                 continue
@@ -342,12 +411,15 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
                 problems.append(f"{where}: must set proxied = false")
             if "lookup(local.allowed_record_name," not in body:
                 problems.append(f"{where}: missing the precondition that refuses kphutt.com and www")
-    if production != 1:
-        problems.append(f"{PRODUCTION_FILE}: must hold resource cloudflare_dns_record.production exactly once, "
-                        f"found {production}")
-    if len(IMPORT.findall(texts.get(PRODUCTION_FILE, ""))) != 1:
-        problems.append(f"{PRODUCTION_FILE}: must hold exactly one import block, for the production records")
-    problems += check_production_list(texts)
+    for resource in PRODUCTION:
+        if production[resource] != 1:
+            problems.append(f"{PRODUCTION_FILE}: must hold resource cloudflare_dns_record.{resource} "
+                            f"exactly once, found {production[resource]}")
+        if imports[resource] != 1:
+            problems.append(f"{PRODUCTION_FILE}: must hold exactly one import block for "
+                            f"cloudflare_dns_record.{resource}, found {imports[resource]}")
+        problems += check_production_list(texts, resource)
+    problems += check_production_loosening(texts)
     every = "\n".join(texts.values())
     if "var.test_hostname" in every:
         if len(re.findall(rf"^\s*{re.escape(TEST_RECORDS)}\s*$", every, re.M)) != 1 or len(re.findall(r"^\s*test_records\s*=", every, re.M)) != 1:
