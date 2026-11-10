@@ -18,7 +18,7 @@
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
 variable "uptime_hostnames" {
-  description = "Hostnames to watch over HTTPS (GET /robots.txt, valid certificate). Each must answer 200, unless it is also in uptime_redirect_hostnames.."
+  description = "Hostnames to watch over HTTPS (GET /robots.txt, valid certificate). Each must answer 200, unless it is also in uptime_redirect_hostnames."
   type        = list(string)
   default     = ["kphutt.com", "www.kphutt.com"]
 
