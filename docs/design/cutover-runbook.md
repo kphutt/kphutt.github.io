@@ -63,11 +63,11 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
      host
    - one request with a known referrer and user agent, then find it in the
      `site-requests` log bucket and note the client address it recorded
-4. If option A offers TLS 1.0 or 1.1, try option D on the same name before choosing (the
-   ADR describes it). Record the same measurements.
-5. Decide, and set the ADR's status to Accepted. Then follow the step 5 that matches the
-   choice. Choosing anything other than A or D (the load balancer, say) means writing its
-   own step 5 here first.
+4. Option A offers TLS 1.0 and 1.1; the owner accepted that for now (the ADR has the
+   measurements). Option D stays untried unless the TLS question is reopened.
+5. Decided: option A, ADR status Accepted. Follow "Step 5 under option A". The option D
+   section below is kept in case the decision changes; choosing anything other than A or D
+   (the load balancer, say) means writing its own step 5 here first.
 
 ## Step 5 under option A: the apex, by domain mapping
 

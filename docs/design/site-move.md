@@ -42,9 +42,9 @@ GitHub Actions (on merge to main, keyless via Workload Identity Federation)
   reviewed `main` does not need a human button. Blue-green: candidate at 0%, smoke, promote.
   A separate rollback workflow points traffic back at a named revision. The deploy workflow
   also accepts `workflow_dispatch`, which is the hook a future scheduled rebuild will use.
-- **Domain:** undecided, and the main risk. See
-  [the domain ADR](../decisions/0001-custom-domain-on-cloud-run.md). It is proven on a test
-  subdomain before the apex moves.
+- **Domain:** a Cloud Run domain mapping, DNS only (option A), proven on a test subdomain
+  before the apex moves. It offers TLS 1.0 and 1.1, which is accepted for now. See
+  [the domain ADR](../decisions/0001-custom-domain-on-cloud-run.md).
 
 ## Headers
 
@@ -120,6 +120,5 @@ record. A log exclusion keeps them from being stored twice if a log sink is adde
 
 ## Open questions
 
-- The domain option (see the ADR). The deciding facts need a live test on the test
-  subdomain: which TLS versions are offered, whether certificate renewal survives, and what
-  client address the request logs record.
+- Whether to close the TLS 1.0 and 1.1 gap (see the ADR), before or after the apex moves.
+  Certificate renewal on the mapping is still unproven: it needs about 90 days.
