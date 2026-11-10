@@ -89,16 +89,20 @@ run "the_production_records_are_exactly_these" {
   command = plan
 
   assert {
-    condition     = length(cloudflare_dns_record.web) == 5 && length(cloudflare_dns_record.mail) == 10
-    error_message = "The zone has 15 production records: web (4 apex A, www) and mail (7 MX, 3 TXT)."
+    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10
+    error_message = "The zone has 19 production records: web (4 apex A, 4 apex AAAA, www) and mail (7 MX, 3 TXT)."
   }
   assert {
     condition = toset([for r in values(cloudflare_dns_record.web) : "${r.name} ${r.type} ${r.content}"]) == toset([
-      "kphutt.com A 185.199.108.153",
-      "kphutt.com A 185.199.109.153",
-      "kphutt.com A 185.199.110.153",
-      "kphutt.com A 185.199.111.153",
-      "www.kphutt.com CNAME kphutt.github.io",
+      "kphutt.com A 216.239.32.21",
+      "kphutt.com A 216.239.34.21",
+      "kphutt.com A 216.239.36.21",
+      "kphutt.com A 216.239.38.21",
+      "kphutt.com AAAA 2001:4860:4802:32::15",
+      "kphutt.com AAAA 2001:4860:4802:34::15",
+      "kphutt.com AAAA 2001:4860:4802:36::15",
+      "kphutt.com AAAA 2001:4860:4802:38::15",
+      "www.kphutt.com CNAME ghs.googlehosted.com",
     ])
     error_message = "A web record's name, type or value changed. Change it here and in dns.tf, in review."
   }
@@ -186,8 +190,23 @@ run "the_test_name_does_not_change_the_production_records" {
   }
 
   assert {
-    condition     = length(cloudflare_dns_record.web) == 5 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.test) == 8
+    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.test) == 8
     error_message = "Turning the test name on adds its records and leaves the production records as they are."
+  }
+}
+
+# The apex and www point at exactly what their mappings ask for (site-domain.tf), so the
+# certificate check can pass and nothing is left pointing at GitHub Pages.
+run "the_web_records_are_what_the_mappings_ask_for" {
+  command = plan
+
+  assert {
+    condition     = toset([for r in values(cloudflare_dns_record.web) : "${r.type} ${lower(r.content)}" if r.name == "kphutt.com"]) == local.apex_mapping_expected && length([for r in values(cloudflare_dns_record.web) : r if r.name == "kphutt.com"]) == length(local.apex_mapping_records)
+    error_message = "The apex records must be exactly local.apex_mapping_records (site-domain.tf)."
+  }
+  assert {
+    condition     = toset([for r in values(cloudflare_dns_record.web) : "${r.type} ${lower(r.content)}" if r.name == "www.kphutt.com"]) == local.www_mapping_expected && length([for r in values(cloudflare_dns_record.web) : r if r.name == "www.kphutt.com"]) == length(local.www_mapping_records)
+    error_message = "The www records must be exactly local.www_mapping_records (site-domain.tf)."
   }
 }
 
