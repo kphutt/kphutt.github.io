@@ -17,6 +17,11 @@ terraform {
       source  = "hashicorp/google-beta"
       version = "~> 8.9.0"
     }
+    # Zips the cost cutoff function's source (cost-cutoff.tf). Local only; no account.
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7.0"
+    }
     # DNS for the test name only (test-domain.tf). No existing record is imported or managed.
     cloudflare = {
       source  = "cloudflare/cloudflare"

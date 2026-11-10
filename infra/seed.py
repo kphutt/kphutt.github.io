@@ -40,6 +40,12 @@ APIS = [
     "monitoring.googleapis.com",
     "logging.googleapis.com",
     "siteverification.googleapis.com",  # proving ownership of the test name (test-domain.tf)
+    # The cost cutoff (cost-cutoff.tf): budget -> topic -> function that turns the site off.
+    "pubsub.googleapis.com",
+    "cloudfunctions.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "eventarc.googleapis.com",
+    "storage.googleapis.com",
 ]
 
 # The deploy jobs run in this environment, and the Google identity trusts only its tokens
