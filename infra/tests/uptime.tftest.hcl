@@ -58,7 +58,7 @@ variables {
   import_production_dns = false
 }
 
-run "checks_the_test_name_by_default" {
+run "checks_the_apex_and_www_by_default" {
   command = plan
 
   assert {
@@ -78,8 +78,18 @@ run "checks_the_test_name_by_default" {
     error_message = "The check must validate the certificate, or a bad one goes unseen."
   }
   assert {
-    condition     = google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].accepted_response_status_codes[0].status_value == 200 && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].accepted_response_status_codes[1].status_value == 301
-    error_message = "The check must expect exactly 200."
+    condition = (
+      length(google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].accepted_response_status_codes) == 1
+      && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].accepted_response_status_codes[0].status_value == 200
+    )
+    error_message = "The apex must accept exactly one code, 200."
+  }
+  assert {
+    condition = (
+      length(google_monitoring_uptime_check_config.site["www.kphutt.com"].http_check[0].accepted_response_status_codes) == 1
+      && google_monitoring_uptime_check_config.site["www.kphutt.com"].http_check[0].accepted_response_status_codes[0].status_value == 301
+    )
+    error_message = "www must accept exactly one code, 301 (it redirects to the apex)."
   }
   assert {
     condition     = google_monitoring_uptime_check_config.site["kphutt.com"].period == "900s"
@@ -91,7 +101,7 @@ run "checks_the_test_name_by_default" {
   }
 }
 
-run "down_alert_needs_two_regions_for_ten_minutes" {
+run "down_alert_needs_two_regions_for_thirty_minutes" {
   command = plan
 
   assert {
@@ -145,12 +155,17 @@ run "cert_alert_fires_below_the_threshold" {
   }
 }
 
-run "apex_and_www_are_one_line_to_add" {
+run "extra_names_and_the_expiry_threshold_are_settable" {
   command = plan
 
   variables {
     uptime_hostnames        = ["next.kphutt.com", "kphutt.com", "www.kphutt.com"]
     uptime_cert_expiry_days = 21
+  }
+
+  assert {
+    condition     = google_monitoring_uptime_check_config.site["next.kphutt.com"].http_check[0].accepted_response_status_codes[0].status_value == 200
+    error_message = "A name that is not a redirect host must accept 200."
   }
 
   assert {
@@ -171,4 +186,14 @@ run "rejects_foreign_hostnames" {
   }
 
   expect_failures = [var.uptime_hostnames]
+}
+
+run "rejects_a_redirect_host_that_is_not_checked" {
+  command = plan
+
+  variables {
+    uptime_redirect_hostnames = ["next.kphutt.com"]
+  }
+
+  expect_failures = [var.uptime_redirect_hostnames]
 }

@@ -1,15 +1,15 @@
-# Uptime checks and the two alerts that matter once the site is on Cloud Run: it is down, or
-# its TLS certificate is about to expire. Both email the existing alert channel
-# (monitoring.tf). Alerts, not dashboards: nothing here is meant to be looked at.
+# Uptime checks and the two alerts that matter: the site is down, or its TLS certificate is
+# about to expire. Both email the existing alert channel (monitoring.tf). Alerts, not
+# dashboards: nothing here is meant to be looked at.
 #
-# Cloud Run's Google-managed certificate renews by itself roughly every 90 days. A renewal
-# that fails stays silent until the old certificate expires and browsers refuse the site, so
-# the certificate alert fires with plenty of time left to fix it.
+# Whoever serves the names is watched: GitHub Pages today, then Cloud Run after the cutover.
+# Both renew their managed certificates by themselves. A renewal that fails stays silent until
+# the old certificate expires and browsers refuse the site, so the certificate alert fires
+# with plenty of time left to fix it.
 #
-# The live names are watched whoever serves them, so the same checks cover GitHub Pages
-# today, the move itself, and Cloud Run after it. www answers with a 301 to the apex, so a
-# 301 counts as healthy as well as a 200. The checks fetch /robots.txt, a few hundred bytes
-# from the same server, so they add almost no outbound data once Cloud Run serves the site.
+# www answers with a 301 to the apex, so the names in uptime_redirect_hostnames accept a 301;
+# every other name must answer 200. The checks fetch /robots.txt, a few hundred bytes, so they
+# add almost no outbound data.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
 # region counts as one execution per period. 2 names x 3 regions x one check per 15 minutes
@@ -18,7 +18,7 @@
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
 variable "uptime_hostnames" {
-  description = "Hostnames to watch over HTTPS (GET /robots.txt, expect 200 or 301, valid certificate)."
+  description = "Hostnames to watch over HTTPS (GET /robots.txt, valid certificate). Each must answer 200, unless it is also in uptime_redirect_hostnames.."
   type        = list(string)
   default     = ["kphutt.com", "www.kphutt.com"]
 
@@ -31,8 +31,19 @@ variable "uptime_hostnames" {
   }
 }
 
+variable "uptime_redirect_hostnames" {
+  description = "Names in uptime_hostnames that redirect (301) instead of answering 200. Every other name must answer 200."
+  type        = list(string)
+  default     = ["www.kphutt.com"]
+
+  validation {
+    condition     = alltrue([for h in var.uptime_redirect_hostnames : contains(var.uptime_hostnames, h)])
+    error_message = "uptime_redirect_hostnames must be a subset of uptime_hostnames."
+  }
+}
+
 variable "uptime_cert_expiry_days" {
-  description = "Email when a certificate has fewer than this many days left. Google renews its managed certificates well before this, so reaching it means a renewal has failed."
+  description = "Email when a certificate has fewer than this many days left. GitHub Pages and Google renew their managed certificates well before this, so reaching it means a renewal has failed."
   type        = number
   default     = 14
 
@@ -63,11 +74,12 @@ resource "google_monitoring_uptime_check_config" "site" {
     validate_ssl   = true
     request_method = "GET"
 
-    accepted_response_status_codes {
-      status_value = 200
-    }
-    accepted_response_status_codes {
-      status_value = 301
+    # One accepted code per name: 301 for the redirecting names, 200 for the rest.
+    dynamic "accepted_response_status_codes" {
+      for_each = [contains(var.uptime_redirect_hostnames, each.value) ? 301 : 200]
+      content {
+        status_value = accepted_response_status_codes.value
+      }
     }
   }
 
@@ -87,7 +99,7 @@ resource "google_monitoring_alert_policy" "site_down" {
   combiner     = "OR"
 
   conditions {
-    display_name = "Check failing from 2 or more regions for 10 minutes"
+    display_name = "Check failing from 2 or more regions for 30 minutes"
     condition_threshold {
       filter = "metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type = \"uptime_url\" AND (${local.uptime_check_filter})"
 
@@ -114,12 +126,12 @@ resource "google_monitoring_alert_policy" "site_down" {
     mime_type = "text/markdown"
     subject   = "Site down: $${resource.label.host}"
     content   = <<-EOT
-      What it means: the uptime check for this site has failed from two or more regions for about 10 minutes. Visitors probably cannot load it, or the certificate no longer validates.
+      What it means: the uptime check for this site has failed from two or more regions for about 30 minutes. Visitors probably cannot load it, or the certificate no longer validates.
 
       What to do:
-      1. Open the site in a browser and check the status of the Cloud Run service `${var.service_name}` in project `${var.project_id}`.
-      2. Look at the service's recent logs and revisions. If a deploy caused it, roll back (infra/README.md).
-      3. If the site is fine for you, check the certificate and the DNS records for the host named above.
+      1. Open the site in a browser. Check which provider answers: DNS pointing at 185.199.108-111.153 or kphutt.github.io means GitHub Pages; DNS pointing at Google means Cloud Run.
+      2. If GitHub Pages serves the name: check the Cloudflare records are DNS-only (not proxied) and the Pages custom-domain and HTTPS status. See AGENTS.md, "Do not turn the DNS proxy on".
+      3. If Cloud Run serves the name: check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}`. For a bad deploy, use the `rollback.yml` workflow. For a DNS problem, see docs/design/cutover-runbook.md.
       4. If the cost cutoff has turned the site off (cost-cutoff.md), this alert is expected. Reopen the site per that doc.
     EOT
   }
@@ -157,12 +169,12 @@ resource "google_monitoring_alert_policy" "cert_expiring" {
     mime_type = "text/markdown"
     subject   = "TLS certificate expiring: $${resource.label.host}"
     content   = <<-EOT
-      What it means: the certificate for the host named above has fewer than ${var.uptime_cert_expiry_days} days left. Google renews its managed certificates long before that, so a renewal has failed. When it expires, browsers will refuse the site.
+      What it means: the certificate for the host named above has fewer than ${var.uptime_cert_expiry_days} days left. GitHub Pages and Google renew their managed certificates long before that, so a renewal has failed. When it expires, browsers will refuse the site.
 
       What to do:
-      1. Check the domain mapping for the host in project `${var.project_id}` (region ${var.region}): its certificate status says why provisioning is stuck.
-      2. Confirm DNS for the host still points where the domain mapping says (a changed or removed record stops renewal).
-      3. If it does not recover, delete and recreate the domain mapping in OpenTofu to force a new certificate, and do it well before the expiry date.
+      1. If GitHub Pages serves the name (DNS points at 185.199.108-111.153 or kphutt.github.io): check the Cloudflare records are DNS-only (not proxied) and the Pages custom-domain and HTTPS status. See AGENTS.md, "Do not turn the DNS proxy on".
+      2. If Cloud Run serves the name (DNS points at Google): check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`); its certificate status says why provisioning is stuck. Confirm DNS still points where the mapping says. For a DNS problem, see docs/design/cutover-runbook.md.
+      3. If it does not recover, re-save the custom domain in Pages, or delete and recreate the domain mapping in OpenTofu, and do it well before the expiry date.
     EOT
   }
 }

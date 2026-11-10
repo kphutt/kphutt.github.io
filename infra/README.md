@@ -207,21 +207,23 @@ The guards:
 
 ## Alerts (`uptime.tf`)
 
-Two emails go to the alert channel, from uptime checks that fetch `https://<name>/` every
-15 minutes from three regions (it must answer 200 or 301 with a valid certificate):
+Two emails go to the alert channel, from uptime checks that fetch `https://<name>/robots.txt`
+every 15 minutes from three regions (it must answer 200, or 301 for `www`, with a valid
+certificate):
 
 - **Site down**: the check fails from two or more regions for 30 minutes (two checks in a row).
 - **TLS certificate expiring**: a certificate has fewer than `uptime_cert_expiry_days` days
-  left (default 14). Google renews its managed certificate long before that, so this means a
-  renewal failed. Each alert says what to do.
+  left (default 14). GitHub Pages and Google renew their managed certificates long before that, so this
+  means a renewal failed. Each alert says what to do, for whichever of the two serves the name.
 
 `kphutt.com` and `www.kphutt.com` are watched by default, whoever serves them, so the same
-checks cover the move. A 301 counts as healthy, because www redirects to the apex. To watch
-another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
+checks cover the move. Only the names in `uptime_redirect_hostnames` (default: `www`, which
+redirects to the apex) may answer 301; every other name must answer 200. To watch another
+name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
 
 Cost is $0: uptime checks get 1,000,000 free executions a month per billing account (this
-setup uses about 17,000 with two names), and alerts on uptime metrics are not charged
-([pricing](https://cloud.google.com/stackdriver/pricing)).
+setup uses about 17,000 with two names), alerts on uptime metrics are not charged, and
+`/robots.txt` is tiny ([pricing](https://cloud.google.com/stackdriver/pricing)).
 
 ## Cost
 
