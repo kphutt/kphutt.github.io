@@ -116,8 +116,8 @@ site refuses today. We accept that for now. The pages are public and static, not
 secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.3. Scanners
 that cap the grade for TLS 1.0 and 1.1 will report it.
 
-**To revisit.** The TLS question is reopened within 30 days after `kphutt.com` moves to
-Cloud Run, and before GitHub Pages is switched off. It is not closed.
+**To revisit.** Revisit by 2027-02-10 (three months), before GitHub Pages is switched off.
+The TLS question is not closed.
 
 **Why not the others, for now**
 
@@ -144,6 +144,8 @@ Cloud Run, and before GitHub Pages is switched off. It is not closed.
   answered 200, with zero console messages and zero CSP violations. Every request went to
   `https://next.kphutt.com`, nothing else.
 - **Mozilla HTTP Observatory:** grade A+, score 140, 12 of 12 tests passed.
+- **SSL Labs** (2026-11-10, results not published): grade B on all 8 addresses; TLS 1.0,
+  1.1, 1.2 and 1.3 offered; no other warnings.
 
 ## The apex
 

@@ -27,7 +27,8 @@ mock_provider "google" {
 
 mock_provider "google-beta" {}
 
-# test-domain.tf is off by default; mocked anyway so these tests can never reach Cloudflare.
+# Mocked so these tests can never reach Cloudflare. dns.tf's production records are always
+# planned; their own tests are in dns.tftest.hcl.
 mock_provider "cloudflare" {}
 
 variables {
@@ -37,6 +38,9 @@ variables {
   github_repository_id = "42"
   billing_account      = "000000-000000-000000"
   alert_email          = "alerts@example.com"
+  cloudflare_zone_id   = "0123456789abcdef0123456789abcdef"
+  # `tofu test` cannot run import blocks (dns.tf).
+  import_production_dns = false
 }
 
 run "only_main_of_this_repository_can_deploy" {

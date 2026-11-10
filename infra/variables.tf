@@ -75,16 +75,15 @@ variable "request_log_retention_days" {
   default     = 30
 }
 
-# The test name for the move (docs/design/cutover-runbook.md, step 4). Off by default, so the
-# base infrastructure can be applied without a Cloudflare token.
+# The test name for the move (docs/design/cutover-runbook.md, step 4). Off by default.
 variable "test_domain_enabled" {
   description = "Map test_hostname to the service and create its DNS records at Cloudflare. Needs CLOUDFLARE_API_TOKEN."
   type        = bool
   default     = false
 }
 
-# The apex and www serve the live site. They must never be managed from here, so the name is
-# checked three times: this validation, a precondition on every DNS record (test-domain.tf)
+# The apex and www serve the live site, and only dns.tf manages them. The test name must never
+# be either of them, so it is checked three times: this validation, a precondition on every DNS record (test-domain.tf)
 # and scripts/check_infra.py.
 variable "test_hostname" {
   description = "The test name. A subdomain of kphutt.com; never kphutt.com itself or www."
@@ -101,7 +100,7 @@ variable "test_hostname" {
 }
 
 variable "cloudflare_zone_id" {
-  description = "The kphutt.com zone id, from the zone's Overview page in Cloudflare. Not a secret. Needed only when test_domain_enabled is true."
+  description = "The kphutt.com zone id, from the zone's Overview page in Cloudflare. Not a secret. Every plan needs it: dns.tf manages the zone's production records."
   type        = string
   default     = ""
 
@@ -113,6 +112,15 @@ variable "cloudflare_zone_id" {
 
 variable "verify_test_hostname" {
   description = "Prove ownership of test_hostname to Google from code (a CNAME under it). Set false if ownership of kphutt.com is already verified for the account running tofu."
+  type        = bool
+  default     = true
+}
+
+# Adopt the zone's existing production records (dns.tf) with import blocks. Leave it on. The
+# offline tests set it false, because `tofu test` cannot run an import; with the records already
+# in state the import blocks do nothing either way.
+variable "import_production_dns" {
+  description = "Run the import blocks in dns.tf. Only the offline tests set this false."
   type        = bool
   default     = true
 }

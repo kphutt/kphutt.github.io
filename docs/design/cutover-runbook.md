@@ -3,9 +3,11 @@
 Steps 4 and 5 of [the plan](site-move.md). Each step says how to undo it.
 
 Step 4 is code: OpenTofu creates the test name's mapping and DNS record
-(`infra/test-domain.tf`). The step 5 changes, to `kphutt.com` and `www`, are written below
-as changes in the Cloudflare dashboard. That code cannot touch those two names, by design;
-bringing the zone's existing records under OpenTofu is a separate change, made before step 5.
+(`infra/test-domain.tf`), and that file cannot touch `kphutt.com` or `www`, by design. The
+zone's production records, the apex, `www` and mail, are code too, in `infra/dns.tf` and
+nowhere else. So every step 5 DNS change below is: change the record in `infra/dns.tf`, plan,
+apply (`infra/README.md`, "Production DNS"). Never change them in the Cloudflare dashboard:
+the next plan would put them back.
 
 Every `gcloud` command names its project and region explicitly. Set them once in the shell
 first, so a different default project can never receive a mapping:
@@ -28,8 +30,27 @@ to lower in advance: a change, or its undo, reaches resolvers within five minute
 | `kphutt.com` | A | `185.199.111.153` | DNS only |
 | `www.kphutt.com` | CNAME | `kphutt.github.io` | DNS only |
 
-These four A records and the CNAME are GitHub Pages. **Putting exactly these back is the
-rollback**, at any point. Do not touch the MX and TXT records: they are for mail.
+These four A records and the CNAME are GitHub Pages, and they are `local.web_records` in
+`infra/dns.tf` (resource `cloudflare_dns_record.web`). **Putting exactly these back is the
+rollback**, at any point: revert the change to `infra/dns.tf`, plan, apply. Do not touch the
+MX and TXT records (`local.mail_records`): they are for mail, and their `prevent_destroy`
+never comes off. (Cloudflare stores these TTLs as 1, "automatic", which it serves as 300.)
+
+### Unlocking the web records
+
+Replacing a record deletes the old one, and `prevent_destroy` on `cloudflare_dns_record.web`
+refuses that. So the cutover pull request below also changes exactly these two lines, and
+nothing else about the guards:
+
+- `infra/dns.tf`, in `resource "cloudflare_dns_record" "web"`: `prevent_destroy = true`
+  becomes `prevent_destroy = false`.
+- `scripts/check_infra.py`: `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
+
+The check fails if only one of them changes, and it refuses `prevent_destroy = false` on
+`cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. They stay unlocked through
+the watch, so a rollback is a plain revert of the record lines; then a pull request sets both
+lines back to `true` (option A step 4, option D step 5). A rollback after that carries the
+same two-line unlock.
 
 ## Step 4: prove it on `next.kphutt.com`
 
@@ -60,8 +81,8 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
    - which TLS versions are offered: a Python TLS probe, one handshake per version (the
      ADR records its result). `openssl s_client -connect next.kphutt.com:443 -servername next.kphutt.com -tls1`
      (then `-tls1_1`, `-tls1_2`, `-tls1_3`) gives the same answer
-   - Mozilla HTTP Observatory on `next.kphutt.com`. An SSL Labs scan (unpublished) is a
-     follow-up, not yet recorded in the ADR
+   - Mozilla HTTP Observatory on `next.kphutt.com`, and an SSL Labs scan with its results
+     not published (both recorded in the ADR)
    - a headless Chromium load of a page: zero CSP violations, zero requests to any other
      host
    - one request with a known referrer and user agent, then find it in the
@@ -82,10 +103,14 @@ Only after step 4 is recorded and the decision is made.
    gcloud beta run domain-mappings create --service site --domain www.kphutt.com --project "$PROJECT" --region "$REGION"
    ```
    Note the A and AAAA records the apex mapping prints.
-2. In Cloudflare, replace the four GitHub A records with the mapping's A and AAAA records,
-   and point `www` at `ghs.googlehosted.com`. DNS only (see the ADR on why not a flattened
-   CNAME).
-   **Rollback:** restore the table above exactly, and delete the AAAA records. GitHub Pages
+2. Change the record in `infra/dns.tf`, plan, apply: replace the four GitHub A records with
+   the mapping's A and AAAA records, and point `www` at `ghs.googlehosted.com`. DNS only (see
+   the ADR on why not a flattened CNAME). Update `tests/dns.tftest.hcl` to match in the same
+   pull request, and unlock the web records in it ("Unlocking the web records" above).
+   Read the plan: it must touch only `cloudflare_dns_record.web`, never
+   `cloudflare_dns_record.mail`.
+   **Rollback:** restore the table above exactly, and delete the AAAA records: revert that
+   change, plan, apply. GitHub Pages
    is still configured and still holds a valid certificate for `kphutt.com`, so it serves
    again as soon as resolvers see the old records (five minutes). That certificate cannot
    renew while DNS points elsewhere, so this fast rollback only lasts as long as it does
@@ -96,7 +121,9 @@ Only after step 4 is recorded and the decision is made.
    does on Pages: `curl -sI https://www.kphutt.com/posts/brochure/` must answer 301 with
    `Location: https://kphutt.com/posts/brochure/` (the server does this by host name,
    `server/sws.toml`). Keep Pages configured during this time, so the rollback stays instant.
-4. Retire Pages, as below.
+4. Once the watch is over, lock the web records again: a pull request that sets both lines
+   from "Unlocking the web records" back to `true`. Its plan changes nothing.
+5. Retire Pages, as below.
 
 ## Step 5 under option D: the apex, through a Cloudflare Worker
 
@@ -107,8 +134,12 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
    step 4 tested on `next.kphutt.com`), and add the route `kphutt.com/*` to it.
 2. In Cloudflare, under SSL/TLS: Minimum TLS Version 1.2, Always Use HTTPS on. Under Web
    Analytics: automatic injection off for this site.
-3. Replace the four GitHub A records with one proxied placeholder record for the apex
-   (`AAAA 100::`, see the ADR). For `www`: replace its CNAME with a proxied placeholder, and
+3. Change the records in `infra/dns.tf`, plan, apply: replace the four GitHub A records
+   with one proxied placeholder record for the apex (`AAAA 100::`, see the ADR).
+   Unlock the web records in the same pull request ("Unlocking the web records" above).
+   `scripts/check_infra.py` refuses a proxied production record, so its `proxied` rule
+   changes for `cloudflare_dns_record.web` only, in the same review; mail stays DNS only.
+   For `www`: replace its CNAME with a proxied placeholder, and
    add a Single Redirect rule sending `www.kphutt.com/*` to `https://kphutt.com/${1}` with
    a 301, path and query kept.
    **Rollback:** restore the table above exactly, which also turns the proxy off (the
@@ -116,13 +147,14 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
    matches nothing that reaches Cloudflare, so it can stay until it is cleaned up. The
    same certificate caveat as option A applies to the speed of this rollback.
 4. Watch, exactly as in option A step 3, including the `www` redirect.
-5. Retire Pages, as below.
+5. Lock the web records again, as in option A step 4.
+6. Retire Pages, as below.
 
 ## Retiring Pages (either option)
 
 Once the new site has been stable, and not before the TLS question in the ADR has been
-revisited. That review is due within 30 days after `kphutt.com` moves to Cloud Run, and
-Pages stays on until it is done.
+revisited. Revisit by 2027-02-10 (three months), before GitHub Pages is switched off: Pages
+stays on until that review is done.
 
 1. As its own pull request:
    - remove the `deploy` job and the Pages artifact upload from `hugo.yml`;

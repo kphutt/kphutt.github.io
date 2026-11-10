@@ -15,14 +15,14 @@
 # before any of the records is created.
 #
 # Nothing here imports or changes an existing record. kphutt.com and www.kphutt.com serve the
-# live site and are never managed from this repository: every DNS record below has a
+# live site and are managed in dns.tf only, never from this file: every DNS record below has a
 # precondition that refuses them, test_hostname's validation refuses them, and
-# scripts/check_infra.py fails if a Cloudflare record could be given any other name.
+# scripts/check_infra.py fails if a Cloudflare record here could be given any other name.
 
 locals {
   zone_name = "kphutt.com"
 
-  # Never managed from here, in any form.
+  # Never managed from here, in any form (dns.tf holds them).
   protected_names = ["kphutt.com", "www.kphutt.com"]
 
   test_domain = var.test_domain_enabled
