@@ -49,6 +49,9 @@ variables {
   github_repository_id = "42"
   billing_account      = "000000-000000-000000"
   alert_email          = "alerts@example.com"
+  cloudflare_zone_id   = "0123456789abcdef0123456789abcdef"
+  # `tofu test` cannot run import blocks (dns.tf).
+  import_production_dns = false
 }
 
 run "trips_on_actual_spend_at_the_cutoff" {

@@ -11,10 +11,12 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `artifact-registry.tf` | The image repository, with a cleanup policy |
 | `identities.tf` | The runtime and deployer service accounts, and Workload Identity Federation |
 | `monitoring.tf` | The billing budget alert, and the request-log bucket, sink and exclusion |
+| `dns.tf` | The zone's production DNS records at Cloudflare: the apex, `www`, mail. The only file that may manage them |
 | `test-domain.tf` | The test name: domain mapping, its DNS record at Cloudflare, ownership proof. Off by default |
 | `outputs.tf` | The values the deploy workflow needs as repository variables |
 | `seed.py` | The one-time steps OpenTofu cannot do: the project, the GitHub environment, the repository variables |
 | `tests/plan.tftest.hcl` | Offline plan tests with mocked providers |
+| `tests/dns.tftest.hcl` | Offline tests that pin every production record's value |
 | `tests/test-domain.tftest.hcl` | Offline tests that the test name can never be `kphutt.com` or `www` |
 
 ## Who changes what
@@ -46,13 +48,15 @@ mise exec -- tofu test
 Every step is a command from this repository. The only things done outside it are signing
 in and creating the Cloudflare token.
 
-1. Copy `terraform.tfvars.example` to `terraform.tfvars` (git-ignored) and fill it in.
+1. Copy `terraform.tfvars.example` to `terraform.tfvars` (git-ignored) and fill it in,
+   including `cloudflare_zone_id`.
 2. Sign in with an account that can create projects and use the billing account:
    `gcloud auth login` and `gcloud auth application-default login`.
 3. `python infra/seed.py project` prints what it will do. Read it, then run it again with
    `--apply`. It creates the project, links billing, enables the APIs and creates the state
    bucket.
-4. From `infra/`:
+4. From `infra/`, with `CLOUDFLARE_API_TOKEN` set (every plan needs it, see "Production
+   DNS"; the token is created as in "The test name", step 1):
    ```bash
    mise exec -- tofu init -backend-config="bucket=<project_id>-tofu-state" -backend-config="prefix=site"
    mise exec -- tofu plan -out=site.tfplan
@@ -72,11 +76,11 @@ in and creating the Cloudflare token.
 
 `test-domain.tf` maps the test name to the service (option A in
 [the ADR](../docs/decisions/0001-custom-domain-on-cloud-run.md)) and creates its DNS record
-at Cloudflare, DNS only. It is off until `test_domain_enabled = true`, so the steps above
-need no Cloudflare token.
+at Cloudflare, DNS only. It is off until `test_domain_enabled = true`.
 
 It manages new records under the test name and nothing else. It does not import or change
-any existing record, and `kphutt.com` and `www.kphutt.com` cannot be managed from here:
+any existing record, and `kphutt.com` and `www.kphutt.com` cannot be managed from here (they
+are in `dns.tf`, see "Production DNS"):
 `test_hostname` refuses them, every record has a precondition that refuses them,
 `scripts/check_infra.py` fails if a Cloudflare record could be named anything else, and
 `tests/test-domain.tftest.hcl` proves the refusals. The token cannot enforce this, because
@@ -136,8 +140,70 @@ mapping and the ownership CNAME are removed. OpenTofu forgets Google's ownership
 deleting it, because Google's API refuses to delete it while the CNAME still exists. Google
 re-checks ownership from time to time and drops it once the CNAME is gone.
 
-`kphutt.com` itself is not here. It moves only after the ADR's decision, and bringing its
-existing records under OpenTofu is a separate change.
+`kphutt.com` itself is not here. Its records are in `dns.tf`.
+
+## Production DNS (`dns.tf`)
+
+Every record in the kphutt.com zone, except the test name's, is in `dns.tf`, as two
+resources:
+
+- `cloudflare_dns_record.web` (list `local.web_records`): the four apex A records and the
+  `www` CNAME that serve the live site (GitHub Pages, until the cutover). These are the
+  records the cutover replaces.
+- `cloudflare_dns_record.mail` (list `local.mail_records`): seven MX, and the SPF, DKIM and
+  DMARC TXT records.
+
+All are DNS only. They are two resources, not one, because `prevent_destroy` covers a whole
+resource: the cutover has to unlock the web records without unlocking mail.
+
+They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
+so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
+blocks stay: once a record is in state they do nothing, and on a fresh state they adopt the
+same records instead of creating copies. (`import_production_dns` turns them off for the
+offline tests only, because `tofu test` cannot import. Leave it on.)
+
+Because these records are always part of the configuration, **every plan now needs
+`CLOUDFLARE_API_TOKEN` and `cloudflare_zone_id`**, not only when the test name is on. The
+token is the same one as for the test name: Zone, DNS, Edit, on kphutt.com only. Cloudflare
+cannot scope a token to single records, so that token can change any record in the zone;
+the guards below are what keep a plan from doing so by accident.
+
+How a change flows:
+
+1. Edit the record's line in `dns.tf`, and the same value in `tests/dns.tftest.hcl`. The test
+   repeats every value, so a change has to be made twice, on purpose.
+2. Open a pull request. `python scripts/check_infra.py` runs the offline checks.
+3. From `infra/`, with the token in the environment:
+   `mise exec -- tofu plan -out=site.tfplan`. Read it: it must change only the records you
+   meant to change.
+4. `mise exec -- tofu apply site.tfplan`, by hand, after review.
+
+Never change these records in the Cloudflare dashboard: the next plan would put them back.
+
+The guards:
+
+- `prevent_destroy` is on both resources, so any plan that would delete or replace a
+  production record fails.
+  - Mail: never lifted. `scripts/check_infra.py` requires `prevent_destroy = true` on
+    `cloudflare_dns_record.mail` and has no setting that allows anything else. Deleting a
+    mail record means changing that rule, in review.
+  - Web: lifted only for the cutover, by one pull request that changes exactly two lines,
+    `prevent_destroy = true` to `false` on `cloudflare_dns_record.web` in `dns.tf`, and
+    `WEB_PREVENT_DESTROY = "true"` to `"false"` in `scripts/check_infra.py`. Either line alone
+    fails the check. A later pull request sets both back (`docs/design/cutover-runbook.md`
+    says when).
+- `scripts/check_infra.py` fails unless `dns.tf` holds only these two resources, each over its
+  own fixed list with one literal line per record and its own import block, DNS only,
+  automatic TTL and `prevent_destroy` as above. The web list may hold only A, AAAA and CNAME
+  records named `kphutt.com` or `www.kphutt.com`; the mail list only MX and TXT, so a mail
+  record cannot be moved into the web list to unlock it. Only `dns.tf` may import a Cloudflare
+  record, and no other file may use either list. The test name and anything under it are
+  refused here, and every other file is still refused the apex and `www`.
+- Nothing may loosen those pins: `dns.tf` may not use `ignore_changes` or
+  `replace_triggered_by`, and no `moved` or `removed` block may be in `dns.tf` or name either
+  resource from another file (either would take a record out from under its pins without a
+  plan deleting it).
+- `tests/dns.tftest.hcl` pins every name, type, value and MX priority.
 
 ## Cost
 
