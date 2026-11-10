@@ -131,6 +131,8 @@ jobs:
         with:
           name: site
           path: public/
+          # Keep .well-known/ (security.txt). The action skips hidden folders by default.
+          include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
 
