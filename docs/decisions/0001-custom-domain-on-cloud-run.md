@@ -1,9 +1,7 @@
 # 0001. Serving kphutt.com from Cloud Run
 
-- **Status:** Proposed. The evidence below is from current documentation plus probes of
-  live endpoints. The deciding measurements need the test subdomain, which does not exist
-  yet. This record is updated with those results before the apex moves.
-- **Date:** 2026-11-08
+- **Status:** Accepted for now (option A). The TLS trade-off is revisited, see Decision.
+- **Date:** 2026-11-08. Decided and measured 2026-11-09.
 
 ## Context
 
@@ -15,7 +13,7 @@ question is how `kphutt.com` reaches it, under five constraints:
 2. No silent, delayed failure. Certificate renewal must not depend on something that only
    breaks 90 days later. `AGENTS.md` records that exact failure as the reason the DNS proxy
    was rejected for Pages.
-3. No regression from today. Measured on 2026-11-08, the live site on Pages refuses TLS 1.0
+3. No regression from today. (This decision waives it for TLS versions, see Decision.) Measured on 2026-11-08, the live site on Pages refuses TLS 1.0
    and 1.1 and offers TLS 1.2 and 1.3. The `*.run.app` address of an existing Cloud Run
    service behaves the same.
 4. DNS stays at Cloudflare (Free plan), DNSSEC on, and other subdomains will exist later.
@@ -95,20 +93,57 @@ address and returns the response unchanged, headers included.
 Google's mapping page names this as one of the two routes to TLS 1.2-only traffic, and
 Firebase Hosting can rewrite every path to a Cloud Run service in us-west1 or us-central1.
 It has no fixed monthly fee and needs nothing in front of it, so it would not reopen the DNS
-proxy question. Its cost is a second set of tools (its own command-line tool, config file and console) plus a CDN cache that can add or change response headers, so it would need the same header check as everything else. It stays open, and is compared with D after the test, against constraint 5. It is recorded here because the source used for option A points at it.
+proxy question. Its cost is a second set of tools (its own command-line tool, config file and console) plus a CDN cache that can add or change response headers, so it would need the same header check as everything else. It is recorded here because the source used for option A points at it. It was considered and set aside for now.
+
+Limits in Firebase's own docs:
+
+- Only the `__session` cookie is passed through to the backend; other cookies are stripped
+  ([cache and cookies](https://firebase.google.com/docs/hosting/manage-cache)).
+- Requests to a Cloud Run service time out after 60 seconds
+  ([Cloud Run rewrites](https://firebase.google.com/docs/hosting/cloud-run)).
+- Budget alerts do not cap usage or charges, so there is no hard spending cap
+  ([pricing and quotas](https://firebase.google.com/docs/hosting/usage-quotas-pricing)).
 
 ## Decision
 
-Not yet made. Recommended path, cheapest proof first, all on `next.kphutt.com`:
+Use option A: a Cloud Run domain mapping with DNS only. It is the least machinery, costs
+nothing, and the certificate is Google's to issue and renew.
 
-1. Map `next.kphutt.com` with option A (DNS only). Record what a TLS scan reports.
-   If, against the documentation, it refuses TLS 1.0 and 1.1, choose A: it is the least
-   machinery.
-2. Otherwise, try option D on the same name and record the same scan, plus the headers,
-   the request logs and the Worker's cost.
-3. Choose between A (accept TLS 1.0/1.1 being offered) and D (accept a Worker), and record
-   the measurements and the choice here before the apex moves. B is not recommended, for
-   the renewal reason above. C would add a monthly cost. E is compared with D at that point.
+**Accepted trade-off.** Measured on 2026-11-09 with a Python TLS probe, `next.kphutt.com`
+offers TLS 1.0, 1.1, 1.2 and 1.3. `kphutt.com` on Pages and the `*.run.app` address refuse
+1.0 and 1.1. So moving the apex to option A means offering two old protocol versions the
+site refuses today. We accept that for now. The pages are public and static, nothing
+secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.3. Scanners
+that cap the grade for TLS 1.0 and 1.1 will report it.
+
+**To revisit.** The TLS question is reopened within 30 days after `kphutt.com` moves to
+Cloud Run, and before GitHub Pages is switched off. It is not closed.
+
+**Why not the others, for now**
+
+- B (Cloudflare proxy in front of the mapping): the certificate renewal path can break
+  silently after about 90 days, the failure `AGENTS.md` already records.
+- C (load balancer): the TLS floor is configurable, but it costs about $18 a month, which
+  breaks the $0 fixed-cost constraint.
+- D (Cloudflare Worker): free and gives a TLS 1.2 floor, but past 100,000 requests a day
+  requests fail, and it adds a script to maintain and a second place for configuration.
+- E (Firebase Hosting in front): free with TLS 1.2 or newer, but it has a second set of
+  tools, puts a CDN in the path, and has limits on cookies, request time and spend (see
+  option E).
+
+### Measured on `next.kphutt.com`, 2026-11-09
+
+- **Smoke test:** `scripts/smoke.py https://next.kphutt.com` passed.
+- **Certificate:** Google-managed, issued by Google Trust Services (WR3).
+- **TLS versions offered:** 1.0, 1.1, 1.2, 1.3.
+- **Request logs:** three requests with a made-up user agent and referrer were found in
+  the `site-requests` log bucket. Each showed the real user agent, the real referrer and a
+  client address of an ordinary visitor kind (IPv4), not a Google or Cloudflare address.
+  The address is not recorded here, because this file is public.
+- **Browser:** headless Chromium loaded the home page and `/posts/brochure/`. Both
+  answered 200, with zero console messages and zero CSP violations. Every request went to
+  `https://next.kphutt.com`, nothing else.
+- **Mozilla HTTP Observatory:** grade A+, score 140, 12 of 12 tests passed.
 
 ## The apex
 
@@ -131,11 +166,10 @@ it by host name, under D a Cloudflare redirect rule does.
 
 ## Client addresses in the request logs
 
-Not yet measured. To be checked on the test subdomain with real requests, and recorded
-here: does the Cloud Run request log show the visitor's address, referrer and user agent?
-Under A it should, because nothing sits in front. Under B or D it will show Cloudflare's
-address; Cloudflare sends the visitor's address in `CF-Connecting-IP` and `X-Forwarded-For`,
-which only static-web-server's own log can record.
+Measured under A on 2026-11-09: the Cloud Run request log shows the visitor's address,
+referrer and user agent, because nothing sits in front. Under B or D it would show
+Cloudflare's address instead; Cloudflare sends the visitor's address in `CF-Connecting-IP`
+and `X-Forwarded-For`, which only static-web-server's own log can record.
 
 ## Sources
 
@@ -144,7 +178,9 @@ which only static-web-server's own log can record.
 - Cloud Run HTTPS requests (HTTP is redirected to HTTPS): https://cloud.google.com/run/docs/triggering/https-request
 - Load balancer SSL policies: https://cloud.google.com/load-balancing/docs/ssl-policies-concepts
 - Load balancer pricing: https://cloud.google.com/load-balancing/pricing
-- Firebase Hosting with Cloud Run: https://firebase.google.com/docs/hosting/cloud-run
+- Firebase Hosting with Cloud Run (rewrites, 60 second timeout): https://firebase.google.com/docs/hosting/cloud-run
+- Firebase Hosting cache and cookies (`__session`): https://firebase.google.com/docs/hosting/manage-cache
+- Firebase Hosting pricing and quotas (budget alerts do not cap spend): https://firebase.google.com/docs/hosting/usage-quotas-pricing
 - Cloudflare Origin Rules (Host header override is Enterprise-only): https://developers.cloudflare.com/rules/origin-rules/
 - Cloudflare Minimum TLS Version: https://developers.cloudflare.com/ssl/edge-certificates/additional-options/minimum-tls/
 - Cloudflare request headers sent to the origin: https://developers.cloudflare.com/fundamentals/reference/http-headers/

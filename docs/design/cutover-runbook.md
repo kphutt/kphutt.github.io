@@ -57,17 +57,20 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 3. Measure, and write the results into the ADR:
    - `python scripts/smoke.py https://next.kphutt.com`
    - `curl -sI` on `/`, `/posts/brochure/`, the stylesheet and a missing page
-   - which TLS versions are offered: `openssl s_client -connect next.kphutt.com:443 -servername next.kphutt.com -tls1` (then `-tls1_1`, `-tls1_2`, `-tls1_3`)
-   - Mozilla HTTP Observatory, and SSL Labs, on `next.kphutt.com`
+   - which TLS versions are offered: a Python TLS probe, one handshake per version (the
+     ADR records its result). `openssl s_client -connect next.kphutt.com:443 -servername next.kphutt.com -tls1`
+     (then `-tls1_1`, `-tls1_2`, `-tls1_3`) gives the same answer
+   - Mozilla HTTP Observatory on `next.kphutt.com`. An SSL Labs scan (unpublished) is a
+     follow-up, not yet recorded in the ADR
    - a headless Chromium load of a page: zero CSP violations, zero requests to any other
      host
    - one request with a known referrer and user agent, then find it in the
      `site-requests` log bucket and note the client address it recorded
-4. If option A offers TLS 1.0 or 1.1, try option D on the same name before choosing (the
-   ADR describes it). Record the same measurements.
-5. Decide, and set the ADR's status to Accepted. Then follow the step 5 that matches the
-   choice. Choosing anything other than A or D (the load balancer, say) means writing its
-   own step 5 here first.
+4. Option A offers TLS 1.0 and 1.1; the owner accepted that for now (the ADR has the
+   measurements). Option D stays untried unless the TLS question is reopened.
+5. Decided: option A, ADR status Accepted. Follow "Step 5 under option A". The option D
+   section below is kept in case the decision changes; choosing anything other than A or D
+   (the load balancer, say) means writing its own step 5 here first.
 
 ## Step 5 under option A: the apex, by domain mapping
 
@@ -117,7 +120,9 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
 
 ## Retiring Pages (either option)
 
-Once the new site has been stable:
+Once the new site has been stable, and not before the TLS question in the ADR has been
+revisited. That review is due within 30 days after `kphutt.com` moves to Cloud Run, and
+Pages stays on until it is done.
 
 1. As its own pull request:
    - remove the `deploy` job and the Pages artifact upload from `hugo.yml`;
