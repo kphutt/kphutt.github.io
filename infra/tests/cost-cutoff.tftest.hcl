@@ -67,6 +67,10 @@ run "trips_on_actual_spend_at_the_cutoff" {
     error_message = "The cutoff budget must have no forecast threshold: forecasts never trip it."
   }
   assert {
+    condition     = google_billing_budget.cutoff.budget_filter[0].credit_types_treatment == "EXCLUDE_ALL_CREDITS"
+    error_message = "The cutoff budget must count usage before credits, or credits could hide a flood."
+  }
+  assert {
     condition     = google_billing_budget.cutoff.all_updates_rule[0].pubsub_topic == google_pubsub_topic.cost_cutoff.id
     error_message = "The cutoff budget must publish to the cutoff topic."
   }

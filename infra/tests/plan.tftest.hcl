@@ -97,6 +97,10 @@ run "service_scales_to_zero_and_is_public" {
     error_message = "The container port must match server/sws.toml."
   }
   assert {
+    condition     = google_cloud_run_v2_service.site.ingress == "INGRESS_TRAFFIC_ALL"
+    error_message = "The site must start open to all traffic (the cost cutoff closes it later; cloud-run.tf ignores ingress changes)."
+  }
+  assert {
     condition     = google_cloud_run_v2_service_iam_member.public.member == "allUsers"
     error_message = "It is a public website."
   }

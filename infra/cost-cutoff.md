@@ -20,6 +20,8 @@ The resources are in `cost-cutoff.tf`. The function is `cost-cutoff/main.py`.
 It never acts on a forecast. Billing data runs a few hours behind, so the real stop point
 is a little above the cutoff. Pick the cutoff with that in mind.
 
+The cutoff budget counts usage before credits (`EXCLUDE_ALL_CREDITS`), so free-trial or promotional credits cannot hide a flood.
+
 ## Why it turns ingress off, and not something else
 
 Google's guide offers two patterns: detach billing from the project, or stop chosen

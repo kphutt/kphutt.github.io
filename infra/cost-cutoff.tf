@@ -47,6 +47,8 @@ resource "google_billing_budget" "cutoff" {
 
   budget_filter {
     projects = ["projects/${data.google_project.this.number}"]
+    # Count usage before credits, so promotional or free-trial credits cannot hide a flood.
+    credit_types_treatment = "EXCLUDE_ALL_CREDITS"
   }
 
   amount {
