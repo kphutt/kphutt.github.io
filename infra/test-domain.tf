@@ -67,11 +67,12 @@ locals {
   test_records_expected = toset([for r in values(local.test_records) : "${r.type} ${lower(r.content)}"])
 }
 
-# The names a Cloudflare record may have. A precondition on each record calls this check.
-# A name must be under kphutt.com, and must not be the apex or www.
+# The names a Cloudflare record outside dns.tf may have: the test name's (this file) and the
+# kphutt.com ownership record's (site-domain.tf). A precondition on each record calls this
+# check. A name must be under kphutt.com, and must not be the apex or www.
 locals {
   allowed_record_name = {
-    for name in compact([var.test_hostname, local.verify ? local.verification_record_name : ""]) :
+    for name in distinct(compact([var.test_hostname, local.verify ? local.verification_record_name : "", local.apex_verification_record_name])) :
     name => (
       endswith(lower(trimsuffix(name, ".")), ".${local.zone_name}")
       && !contains(local.protected_names, lower(trimsuffix(name, ".")))

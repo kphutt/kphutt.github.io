@@ -42,6 +42,51 @@ mock_provider "google" {
 mock_provider "google-beta" {}
 mock_provider "cloudflare" {}
 
+# kphutt.com's ownership token and mappings (site-domain.tf), in the shape Google returns:
+# the token is "<label> <target>", the apex mapping asks for Google's eight addresses and
+# www for one CNAME. tests/site-domain.tftest.hcl tests them; here they only have to plan.
+override_data {
+  target = data.google_site_verification_token.apex
+  values = {
+    token = "abc123def gv-mockedapex.dv.googlehosted.com"
+  }
+}
+
+override_resource {
+  target = google_cloud_run_domain_mapping.apex
+  values = {
+    status = [{
+      conditions          = []
+      observed_generation = 1
+      mapped_route_name   = "site"
+      resource_records = [
+        { name = "", type = "A", rrdata = "216.239.32.21" },
+        { name = "", type = "A", rrdata = "216.239.34.21" },
+        { name = "", type = "A", rrdata = "216.239.36.21" },
+        { name = "", type = "A", rrdata = "216.239.38.21" },
+        { name = "", type = "AAAA", rrdata = "2001:4860:4802:32::15" },
+        { name = "", type = "AAAA", rrdata = "2001:4860:4802:34::15" },
+        { name = "", type = "AAAA", rrdata = "2001:4860:4802:36::15" },
+        { name = "", type = "AAAA", rrdata = "2001:4860:4802:38::15" },
+      ]
+    }]
+  }
+}
+
+override_resource {
+  target = google_cloud_run_domain_mapping.www
+  values = {
+    status = [{
+      conditions          = []
+      observed_generation = 1
+      mapped_route_name   = "site"
+      resource_records = [
+        { name = "www", type = "CNAME", rrdata = "ghs.googlehosted.com." },
+      ]
+    }]
+  }
+}
+
 variables {
   project_id           = "test-site-project"
   region               = "us-west1"

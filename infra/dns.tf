@@ -24,9 +24,10 @@
 # prevent_destroy refuses any plan that would delete one.
 
 locals {
-  # One line per record. id is Cloudflare's record id, used only to import. ttl 1 means
-  # "automatic" at Cloudflare. priority is set for MX records only. TXT values keep the
-  # quotes Cloudflare stores them with.
+  # One line per record. id is Cloudflare's record id, used only to import; in the web list
+  # only, it may be null for a record the next apply creates. ttl 1 means "automatic" at
+  # Cloudflare. priority is set for MX records only. TXT values keep the quotes Cloudflare
+  # stores them with.
 
   # The live site: the apex and www. Only A, AAAA and CNAME records, named kphutt.com or
   # www.kphutt.com.
@@ -56,8 +57,10 @@ locals {
 # Adopts each existing record into state. Once a record is in state, its import block does
 # nothing; it stays so that a fresh state adopts the same records rather than creating copies.
 # Only the offline tests turn it off (var.import_production_dns): `tofu test` cannot import.
+# A web record written before it exists has id = null: it is skipped here and the apply
+# creates it. The pull request after that apply writes its id in (docs/design/cutover-runbook.md).
 import {
-  for_each = var.import_production_dns ? local.web_records : {}
+  for_each = var.import_production_dns ? { for k, v in local.web_records : k => v if v.id != null } : {}
   to       = cloudflare_dns_record.web[each.key]
   id       = "${var.cloudflare_zone_id}/${each.value.id}"
 }

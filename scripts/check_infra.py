@@ -128,8 +128,10 @@ def check_deployer_commands() -> bool:
 #
 #   - the only Cloudflare resource type is a DNS record, and there is no Cloudflare data
 #     source or import block (nothing existing is read into, or adopted by, this state);
-#   - a record's name is one of the expressions below, never a literal. Both are under the
-#     test name, whose validation refuses the apex and www;
+#   - a record's name is one of the expressions below, never a literal. Two are under the
+#     test name, whose validation refuses the apex and www; the third is kphutt.com's
+#     ownership record (site-domain.tf), one checked label directly under the zone, so it
+#     can never be the apex, www, a mail name or the test name;
 #   - every record is DNS only and carries the precondition that refuses the apex and www;
 #   - the ownership record is a CNAME. The test name's records come only from the fixed lists
 #     local.test_address_records (A and AAAA records holding literal addresses) and
@@ -139,11 +141,16 @@ def check_deployer_commands() -> bool:
 # A literal name, "@", a new expression, a new record type or a new resource type fails here,
 # so widening what OpenTofu manages at Cloudflare takes a change to this rule, in review.
 CLOUDFLARE_TYPES = {"cloudflare_dns_record"}
-RECORD_NAMES = {"var.test_hostname", "local.verification_record_name"}
+RECORD_NAMES = {"var.test_hostname", "local.verification_record_name", "local.apex_verification_record_name"}
 # The lines a record must carry, by its name.
 RECORD_RULES = {
     "local.verification_record_name": {
         "type": '"CNAME"',
+    },
+    "local.apex_verification_record_name": {
+        "type": '"CNAME"',
+        "content": "local.apex_verification_target",
+        "prevent_destroy": "true",
     },
     "var.test_hostname": {
         "for_each": "local.test_domain ? local.test_records : {}",
@@ -169,6 +176,39 @@ VERIFICATION_NAME_PARTS = (
     'endswith(local.verification_label, ".${var.test_hostname}")',
     '"${local.verification_label}.${var.test_hostname}"',
 )
+# local.apex_verification_record_name must be one checked label directly under the zone. These
+# lines are required exactly, and the record must carry the precondition that checks the label.
+APEX_VERIFICATION_LINES = {
+    "apex_verification_record_name": '"${local.apex_verification_label}.${local.zone_name}"',
+    "apex_verification_label_ok": 'can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", '
+                                  'local.apex_verification_label)) && local.apex_verification_label != "www" '
+                                  '&& local.apex_verification_record_name != var.test_hostname',
+}
+APEX_VERIFICATION_PRECONDITION = "local.apex_verification_label_ok"
+
+
+def _ipv4(v: str) -> bool:
+    return isinstance(ipaddress.ip_address(v), ipaddress.IPv4Address)
+
+
+def _ipv6(v: str) -> bool:
+    return isinstance(ipaddress.ip_address(v), ipaddress.IPv6Address)
+
+
+# Cloud Run domain mappings. The test name's is in test-domain.tf. The live names' are in
+# site-domain.tf (SITE_DOMAIN_FILE) and nowhere else. Each is named by the expression below,
+# carries prevent_destroy (once DNS points at a mapping, deleting it takes its name off the
+# internet) and a postcondition that compares Google's request with its fixed list, and each
+# list holds only the kind of record Google asks for that name.
+SITE_DOMAIN_FILE = "site-domain.tf"
+ZONE_NAME = '"kphutt.com"'
+MAPPINGS = {
+    "test": {"file": "test-domain.tf", "name": "var.test_hostname"},
+    "apex": {"file": SITE_DOMAIN_FILE, "name": "local.zone_name", "list": "apex_mapping_records",
+             "allowed": {"A": _ipv4, "AAAA": _ipv6}},
+    "www": {"file": SITE_DOMAIN_FILE, "name": '"www.${local.zone_name}"', "list": "www_mapping_records",
+            "allowed": {"CNAME": lambda v: v == "ghs.googlehosted.com"}},
+}
 PRODUCTION_FILE = "dns.tf"
 ZONE = "kphutt.com"
 # The default test_hostname (variables.tf). Production entries stay off it and out from under it.
@@ -180,12 +220,16 @@ TEST_NAME = "next.kphutt.com"
 # review. The mail records have no such setting: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
 # The two production resources: the list each one runs over, the record types that list may
-# hold, the names it may hold (None: any name in the zone), and its prevent_destroy.
+# hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
+# an entry may be a record that does not exist yet (id = null, so its import is skipped and
+# the apply creates it). Only the web list may: the cutover adds the apex's new records
+# before Cloudflare has given them ids, and the pull request after the apply writes the ids
+# in. Every mail record exists and is adopted.
 PRODUCTION = {
     "web": {"list": "web_records", "types": {"A", "AAAA", "CNAME"},
-            "names": {ZONE, "www." + ZONE}, "prevent_destroy": WEB_PREVENT_DESTROY},
+            "names": {ZONE, "www." + ZONE}, "prevent_destroy": WEB_PREVENT_DESTROY, "new_records": True},
     "mail": {"list": "mail_records", "types": {"MX", "TXT"},
-             "names": None, "prevent_destroy": "true"},
+             "names": None, "prevent_destroy": "true", "new_records": False},
 }
 
 
@@ -206,8 +250,11 @@ def production_rules(resource: str) -> dict[str, str]:
 
 def production_import(resource: str) -> dict[str, str]:
     """The lines the import block for cloudflare_dns_record.<resource> must carry."""
+    lst = f"local.{PRODUCTION[resource]['list']}"
+    if PRODUCTION[resource]["new_records"]:
+        lst = f"{{ for k, v in {lst} : k => v if v.id != null }}"
     return {
-        "for_each": f"var.import_production_dns ? local.{PRODUCTION[resource]['list']} : {{}}",
+        "for_each": f"var.import_production_dns ? {lst} : {{}}",
         "to": f"cloudflare_dns_record.{resource}[each.key]",
         "id": '"${var.cloudflare_zone_id}/${each.value.id}"',
     }
@@ -221,7 +268,7 @@ LOOSENERS = re.compile(r"\b(ignore_changes|replace_triggered_by)\b")
 # would take a record out from under its pins without a plan ever deleting it.
 STATE_BLOCK = re.compile(r"^\s*(moved|removed)\s*\{", re.M)
 PRODUCTION_ENTRY = re.compile(
-    r'^\s*"([a-z0-9-]+)"\s*=\s*\{\s*id\s*=\s*"([0-9a-f]{32})"\s*,\s*name\s*=\s*"([^"]+)"\s*,'
+    r'^\s*"([a-z0-9-]+)"\s*=\s*\{\s*id\s*=\s*("[0-9a-f]{32}"|null)\s*,\s*name\s*=\s*"([^"]+)"\s*,'
     r'\s*type\s*=\s*"([A-Z]+)"\s*,\s*content\s*=\s*"((?:[^"\\]|\\")*)"\s*,\s*priority\s*=\s*(null|[0-9]+)\s*\}\s*$'
 )
 HOST = re.compile(r"^([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?[.])+[a-z]{2,}$")
@@ -266,8 +313,11 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
             problems.append(f"local.{lst}: not a one-line {{ id, name, type, content, priority }} "
                             f"entry: {line.strip()[:80]}")
             continue
-        key, _, rname, rtype, content, priority = e.groups()
+        key, rid, rname, rtype, content, priority = e.groups()
         seen += 1
+        if rid == "null" and not rule["new_records"]:
+            problems.append(f"local.{lst}[{key}]: id is null, but every record in this list must "
+                            "exist and be adopted")
         if not (rname == ZONE or rname.endswith("." + ZONE)):
             problems.append(f"local.{lst}[{key}]: {rname} is not in the {ZONE} zone")
         if rname == TEST_NAME or rname.endswith("." + TEST_NAME):
@@ -357,6 +407,56 @@ def check_record_list(every: str, name: str, allowed: dict) -> list[str]:
     return problems
 
 
+def check_mappings(texts: dict[str, str]) -> list[str]:
+    """Every domain mapping is one of MAPPINGS, in its file, held to its rule."""
+    problems = []
+    seen = dict.fromkeys(MAPPINGS, 0)
+    for name, text in texts.items():
+        for m in BLOCK.finditer(text):
+            kind, rtype, rname = m.groups()
+            if "domain_mapping" not in rtype:
+                continue
+            where = f"{name}: {kind} {rtype}.{rname}"
+            rule = MAPPINGS.get(rname)
+            if kind != "resource" or rtype != "google_cloud_run_domain_mapping" or rule is None:
+                problems.append(f"{where}: the only domain mappings are "
+                                + ", ".join(f"google_cloud_run_domain_mapping.{r}" for r in MAPPINGS))
+                continue
+            if name != rule["file"]:
+                problems.append(f"{where}: belongs in {rule['file']}")
+                continue
+            seen[rname] += 1
+            body = block_body(text, m.end())
+            if attribute(body, "name") != [rule["name"]]:
+                problems.append(f"{where}: name must be {rule['name']}, got {attribute(body, 'name')}")
+            if "list" in rule:
+                problems += check_exact_lines(where, body, {"prevent_destroy": "true"})
+                expected = rule["list"].replace("_records", "_expected")
+                if not re.search(rf"==\s*local\.{expected}\s*,?\s*$", body, re.M) \
+                        or f"length(local.{rule['list']})" not in body:
+                    problems.append(f"{where}: missing the postcondition that compares Google's request "
+                                    f"with local.{rule['list']}")
+    for rname, rule in MAPPINGS.items():
+        if seen[rname] != 1:
+            problems.append(f"{rule['file']}: must hold google_cloud_run_domain_mapping.{rname} "
+                            f"exactly once, found {seen[rname]}")
+        if "list" not in rule:
+            continue
+        text = texts.get(rule["file"], "")
+        problems += [f"{rule['file']}: {p}" for p in check_record_list(text, rule["list"], rule["allowed"])]
+        expected = rule["list"].replace("_records", "_expected")
+        want = f'toset([for r in values(local.{rule["list"]}) : "${{r.type}} ${{lower(r.content)}}"])'
+        if attribute(text, expected) != [want]:
+            problems.append(f"{rule['file']}: local.{expected} must be defined once, as: {want}")
+        for other, other_text in texts.items():
+            if other != rule["file"] and re.search(rf"\b({rule['list']}|{expected})\b", other_text):
+                problems.append(f"{other}: local.{rule['list']} may only be used in {rule['file']}")
+    zone_names = [v for t in texts.values() for v in attribute(t, "zone_name")]
+    if zone_names != [ZONE_NAME]:
+        problems.append(f"local.zone_name must be defined once, as {ZONE_NAME}, got {zone_names}")
+    return problems
+
+
 def check_cloudflare(infra: Path = INFRA) -> bool:
     problems = []
     problems += [f"{f.name}: JSON configuration is not covered by this rule; write HCL"
@@ -411,6 +511,12 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
                 problems.append(f"{where}: must set proxied = false")
             if "lookup(local.allowed_record_name," not in body:
                 problems.append(f"{where}: missing the precondition that refuses kphutt.com and www")
+            if names == ["local.apex_verification_record_name"]:
+                if name != SITE_DOMAIN_FILE:
+                    problems.append(f"{where}: kphutt.com's ownership record belongs in {SITE_DOMAIN_FILE}")
+                if APEX_VERIFICATION_PRECONDITION not in body:
+                    problems.append(f"{where}: missing the precondition that checks the token's label "
+                                    f"({APEX_VERIFICATION_PRECONDITION})")
     for resource in PRODUCTION:
         if production[resource] != 1:
             problems.append(f"{PRODUCTION_FILE}: must hold resource cloudflare_dns_record.{resource} "
@@ -426,6 +532,11 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
             problems.append(f"local.test_records must be defined once, as: {TEST_RECORDS}")
         for name, allowed in RECORD_LISTS.items():
             problems += check_record_list(every, name, allowed)
+    if "local.apex_verification_record_name" in every:
+        for key, want in APEX_VERIFICATION_LINES.items():
+            if attribute(every, key) != [want]:
+                problems.append(f"local.{key} must be defined once, as: {want}")
+    problems += check_mappings(texts)
     if "local.verification_record_name" in every:
         problems += [f"local.verification_record_name is no longer built under the test name (missing {part})"
                      for part in VERIFICATION_NAME_PARTS if part not in every]
