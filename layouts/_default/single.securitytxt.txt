@@ -1,0 +1,11 @@
+{{- /*
+  How to report a security problem with this site (RFC 9116). Reports go to GitHub's private
+  vulnerability reporting, so no email address is published. There is no Policy field
+  because there is no policy page. Expires is 180 days after the build, in UTC, inside the
+  one year the RFC recommends, and hugo.yml rebuilds monthly to renew it.
+*/ -}}
+# Security contact for kphutt.com only. Other services have their own.
+Contact: https://github.com/kphutt/kphutt.github.io/security/advisories/new
+Expires: {{ now.UTC.AddDate 0 0 180 | time.Format "2006-01-02T15:04:05Z" }}
+Preferred-Languages: en
+Canonical: {{ "/.well-known/security.txt" | absURL }}

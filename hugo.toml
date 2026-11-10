@@ -98,6 +98,14 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
     isPlainText = true
     notAlternative = true
 
+# security.txt (RFC 9116). The page that renders it is content/security.md, which puts it
+# at /.well-known/security.txt; its template is layouts/_default/single.securitytxt.txt.
+[outputFormats.securitytxt]
+  mediaType = "text/plain"
+  baseName = "security"
+  isPlainText = true
+  notAlternative = true
+
 [outputs]
   # "robots" must be listed explicitly. enableRobotsTXT alone only adds it to Hugo's
   # DEFAULT home outputs, and declaring this list at all replaces those defaults -- so

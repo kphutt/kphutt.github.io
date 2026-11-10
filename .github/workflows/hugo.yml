@@ -8,9 +8,10 @@ name: Build and deploy
 #              the repository variables are set (infra/README.md), so this workflow is
 #              safe to merge before any of that.
 #
-# workflow_dispatch is also the hook for a future scheduled rebuild: a `schedule:` trigger
-# added here runs on main, and the Cloud Run identity trusts push, workflow_dispatch and
-# schedule events (infra/identities.tf), so it would deploy with no other change.
+# Pushes rebuild the site, and this monthly run covers the months without one, so
+# security.txt's Expires date (180 days out) doesn't lapse. But GitHub pauses schedules
+# after 60 days without repository activity. If that happens, re-enable this workflow in the
+# Actions tab.
 #
 # The required status check is `build`, a summary job at the end that passes only when
 # the site build (`site`), the container smoke test (`image`) and the infra checks
@@ -24,6 +25,8 @@ on:
     branches: ["main"]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 6 1 * *" # the 1st of each month, 06:17 UTC
 
 # Least privilege by default. Only the deploy jobs widen this for themselves, so a build
 # triggered by a pull request never holds a token that can publish anywhere.
@@ -127,6 +130,8 @@ jobs:
         with:
           name: site
           path: public/
+          # Keep .well-known/ (security.txt). The action skips hidden folders by default.
+          include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
 
@@ -135,6 +140,8 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./public
+          # Keep .well-known/ (security.txt). The action skips hidden folders by default.
+          include-hidden-files: true
 
   deploy:
     if: github.event_name != 'pull_request'
