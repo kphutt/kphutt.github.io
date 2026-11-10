@@ -47,3 +47,13 @@ repos:
         pass_filenames: false
         files: ^(infra/|mise\.toml$|scripts/(check_infra|move_live_tag)\.py$|\.github/workflows/)
         stages: [pre-push]
+
+      # The cost cutoff function's unit tests (standard library only, no network), mirroring
+      # the step of the same name in the workflow's `infra` job.
+      - id: cost-cutoff-tests
+        name: cost cutoff function unit tests (mirrors the CI infra job)
+        entry: python -m unittest discover -s infra/cost-cutoff
+        language: system
+        pass_filenames: false
+        files: ^infra/
+        stages: [pre-push]

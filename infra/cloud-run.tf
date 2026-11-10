@@ -77,6 +77,10 @@ resource "google_cloud_run_v2_service" "site" {
       client,
       client_version,
       traffic,
+      # The cost cutoff (cost-cutoff.tf) turns the site off by setting ingress to internal
+      # only. Ignoring it means a later `tofu apply` cannot quietly reopen a tripped site;
+      # reopening is a deliberate command (cost-cutoff.md).
+      ingress,
     ]
   }
 }

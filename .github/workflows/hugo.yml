@@ -171,6 +171,8 @@ jobs:
           tofu_wrapper: false
       - name: Check infra
         run: python3 scripts/check_infra.py
+      - name: Cost cutoff function unit tests
+        run: python3 -m unittest discover -s infra/cost-cutoff
 
   # Build the container from the checked site, run it, and smoke-test it on the runner:
   # every sitemap page, the feeds, robots.txt, llms.txt, the 404 page, and every security

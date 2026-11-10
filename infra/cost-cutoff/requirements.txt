@@ -1,0 +1,4 @@
+# Pinned exactly. Each version was at least a week old when pinned.
+functions-framework==3.10.2
+google-auth==2.62.0
+requests==2.34.2
