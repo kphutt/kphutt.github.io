@@ -163,14 +163,22 @@ The apply:
    subdomain of a verified name). Anything else stops the apply. Those lists are the
    records the cutover writes into `dns.tf`.
 
-The guards: the ownership record's name is one plain DNS label directly under the zone,
-never `www`, the test name or a name with an underscore (mail's), checked by a precondition
-and by `scripts/check_infra.py`, which also pins how the name is built. The record, the
-ownership check and both mappings are refused anywhere but this file. The record and both
-mappings carry `prevent_destroy`: once DNS points at a mapping, deleting it takes the name
-off the internet, and Google re-checks ownership from time to time. The token is tied to the
-Google account that asks for it, so run OpenTofu as the same account; a different account
-gets a different token, and the plan fails rather than replace the record.
+### Guards on the ownership record
+
+The ownership record is the DNS record that proves to Google you own kphutt.com. Cloud Run
+needed that proof to map kphutt.com and www, and Google re-checks it from time to time.
+Three guards protect it and the two mappings:
+
+- A precondition limits its name to one label of letters, digits and hyphens directly under
+  kphutt.com, never `www` or the test name `next`.
+- `scripts/check_infra.py` refuses the record outside `site-domain.tf`, and requires the
+  Site Verification resource and both mappings in it.
+- `prevent_destroy` stops OpenTofu from deleting the record or either mapping.
+
+None of these stops a change of account, though. The record contains a code from the Google
+account that runs OpenTofu. Applying another account's plan swaps in that account's code and
+removes your proof. Run OpenTofu as the account that set this up, and stop if a plan changes
+this record.
 
 ## Production DNS (`dns.tf`)
 
