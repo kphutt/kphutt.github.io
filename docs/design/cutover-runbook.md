@@ -57,8 +57,11 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 3. Measure, and write the results into the ADR:
    - `python scripts/smoke.py https://next.kphutt.com`
    - `curl -sI` on `/`, `/posts/brochure/`, the stylesheet and a missing page
-   - which TLS versions are offered: `openssl s_client -connect next.kphutt.com:443 -servername next.kphutt.com -tls1` (then `-tls1_1`, `-tls1_2`, `-tls1_3`)
-   - Mozilla HTTP Observatory, and SSL Labs, on `next.kphutt.com`
+   - which TLS versions are offered: a Python TLS probe, one handshake per version (the
+     ADR records its result). `openssl s_client -connect next.kphutt.com:443 -servername next.kphutt.com -tls1`
+     (then `-tls1_1`, `-tls1_2`, `-tls1_3`) gives the same answer
+   - Mozilla HTTP Observatory on `next.kphutt.com`. An SSL Labs scan (unpublished) is a
+     follow-up, not yet recorded in the ADR
    - a headless Chromium load of a page: zero CSP violations, zero requests to any other
      host
    - one request with a known referrer and user agent, then find it in the
@@ -117,7 +120,9 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
 
 ## Retiring Pages (either option)
 
-Once the new site has been stable:
+Once the new site has been stable, and not before the TLS question in the ADR has been
+revisited. That review is due within 30 days after `kphutt.com` moves to Cloud Run, and
+Pages stays on until it is done.
 
 1. As its own pull request:
    - remove the `deploy` job and the Pages artifact upload from `hugo.yml`;

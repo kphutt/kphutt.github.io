@@ -13,7 +13,7 @@ question is how `kphutt.com` reaches it, under five constraints:
 2. No silent, delayed failure. Certificate renewal must not depend on something that only
    breaks 90 days later. `AGENTS.md` records that exact failure as the reason the DNS proxy
    was rejected for Pages.
-3. No regression from today. Measured on 2026-11-08, the live site on Pages refuses TLS 1.0
+3. No regression from today. (This decision waives it for TLS versions, see Decision.) Measured on 2026-11-08, the live site on Pages refuses TLS 1.0
    and 1.1 and offers TLS 1.2 and 1.3. The `*.run.app` address of an existing Cloud Run
    service behaves the same.
 4. DNS stays at Cloudflare (Free plan), DNSSEC on, and other subdomains will exist later.
@@ -93,7 +93,16 @@ address and returns the response unchanged, headers included.
 Google's mapping page names this as one of the two routes to TLS 1.2-only traffic, and
 Firebase Hosting can rewrite every path to a Cloud Run service in us-west1 or us-central1.
 It has no fixed monthly fee and needs nothing in front of it, so it would not reopen the DNS
-proxy question. Its cost is a second set of tools (its own command-line tool, config file and console) plus a CDN cache that can add or change response headers, so it would need the same header check as everything else. It stays open, and is compared with D after the test, against constraint 5. It is recorded here because the source used for option A points at it.
+proxy question. Its cost is a second set of tools (its own command-line tool, config file and console) plus a CDN cache that can add or change response headers, so it would need the same header check as everything else. It is recorded here because the source used for option A points at it. It was considered and set aside for now.
+
+Limits in Firebase's own docs:
+
+- Only the `__session` cookie is passed through to the backend; other cookies are stripped
+  ([cache and cookies](https://firebase.google.com/docs/hosting/manage-cache)).
+- Requests to a Cloud Run service time out after 60 seconds
+  ([Cloud Run rewrites](https://firebase.google.com/docs/hosting/cloud-run)).
+- Budget alerts do not cap usage or charges, so there is no hard spending cap
+  ([pricing and quotas](https://firebase.google.com/docs/hosting/usage-quotas-pricing)).
 
 ## Decision
 
@@ -107,8 +116,8 @@ site refuses today. We accept that for now. The pages are public and static, not
 secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.3. Scanners
 that cap the grade for TLS 1.0 and 1.1 will report it.
 
-**Revisited.** The TLS question is reopened before or after the apex cutover, whichever
-comes first. It is not closed.
+**Revisited.** The TLS question is reopened within 30 days after `kphutt.com` moves to
+Cloud Run, and before GitHub Pages is switched off. It is not closed.
 
 **Why not the others, for now**
 
@@ -118,9 +127,9 @@ comes first. It is not closed.
   breaks the $0 fixed-cost constraint.
 - D (Cloudflare Worker): free and gives a TLS 1.2 floor, but past 100,000 requests a day
   requests fail, and it adds a script to maintain and a second place for configuration.
-- E (Firebase Hosting in front): free with TLS 1.2 or newer, but it only passes the
-  `__session` cookie to the service, has a 60 second request timeout, puts a CDN in the
-  path, and has no firewall and no spending cap if traffic floods it.
+- E (Firebase Hosting in front): free with TLS 1.2 or newer, but it has a second set of
+  tools, puts a CDN in the path, and has limits on cookies, request time and spend (see
+  option E).
 
 ### Measured on `next.kphutt.com`, 2026-11-09
 
@@ -169,7 +178,9 @@ and `X-Forwarded-For`, which only static-web-server's own log can record.
 - Cloud Run HTTPS requests (HTTP is redirected to HTTPS): https://cloud.google.com/run/docs/triggering/https-request
 - Load balancer SSL policies: https://cloud.google.com/load-balancing/docs/ssl-policies-concepts
 - Load balancer pricing: https://cloud.google.com/load-balancing/pricing
-- Firebase Hosting with Cloud Run: https://firebase.google.com/docs/hosting/cloud-run
+- Firebase Hosting with Cloud Run (rewrites, 60 second timeout): https://firebase.google.com/docs/hosting/cloud-run
+- Firebase Hosting cache and cookies (`__session`): https://firebase.google.com/docs/hosting/manage-cache
+- Firebase Hosting pricing and quotas (budget alerts do not cap spend): https://firebase.google.com/docs/hosting/usage-quotas-pricing
 - Cloudflare Origin Rules (Host header override is Enterprise-only): https://developers.cloudflare.com/rules/origin-rules/
 - Cloudflare Minimum TLS Version: https://developers.cloudflare.com/ssl/edge-certificates/additional-options/minimum-tls/
 - Cloudflare request headers sent to the origin: https://developers.cloudflare.com/fundamentals/reference/http-headers/
