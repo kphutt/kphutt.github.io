@@ -67,11 +67,11 @@ run "checks_the_test_name_by_default" {
   }
   assert {
     condition = (
-      google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].path == "/"
+      google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].path == "/robots.txt"
       && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].port == 443
       && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].use_ssl == true
     )
-    error_message = "The check must be an HTTPS GET of / on 443."
+    error_message = "The check must be an HTTPS GET of /robots.txt on 443."
   }
   assert {
     condition     = google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].validate_ssl == true
