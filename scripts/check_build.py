@@ -17,6 +17,7 @@ import hashlib
 import re
 import sys
 import tomllib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Read the expected origin out of hugo.toml rather than hardcoding it, so this file does
@@ -384,6 +385,54 @@ def resolve_ref(ref: str, base: str, root: Path, page: Path):
     return target
 
 
+SECURITY_TXT = ".well-known/security.txt"
+SECURITY_CONTACT = "https://github.com/kphutt/kphutt.github.io/security/advisories/new"
+
+
+def check_security_txt(root: Path, base: str, failures: list) -> None:
+    """RFC 9116: the file exists, has its required fields, and Expires is neither past nor
+    more than a year out. Expires is generated at build time, so this catches a template
+    that stops generating it; the monthly rebuild keeps it from going stale."""
+    path = root / SECURITY_TXT
+    if not path.is_file():
+        failures.append(f"{SECURITY_TXT} missing from build output -- no way to report a vulnerability")
+        return
+    fields = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip() and not line.startswith("#") and ": " in line:
+            name, value = line.split(": ", 1)
+            fields.setdefault(name.strip(), []).append(value.strip())
+    if fields.get("Contact") != [SECURITY_CONTACT]:
+        failures.append(f"{SECURITY_TXT}: Contact is {fields.get('Contact')}, expected [{SECURITY_CONTACT!r}]")
+    if fields.get("Canonical") != [f"{base}/{SECURITY_TXT}"]:
+        failures.append(f"{SECURITY_TXT}: Canonical is {fields.get('Canonical')}, expected {base}/{SECURITY_TXT}")
+    if len(fields.get("Expires", [])) != 1:
+        failures.append(f"{SECURITY_TXT}: needs exactly one Expires field")
+    else:
+        try:
+            expires = datetime.fromisoformat(fields["Expires"][0].replace("Z", "+00:00"))
+            if expires.tzinfo is None:
+                raise ValueError("no timezone")
+        except ValueError:
+            failures.append(f"{SECURITY_TXT}: Expires {fields['Expires'][0]!r} is not an ISO 8601 date with a zone")
+        else:
+            now = datetime.now(timezone.utc)
+            if expires <= now:
+                failures.append(f"{SECURITY_TXT}: Expires {expires.isoformat()} is in the past")
+            elif expires > now + timedelta(days=365):
+                failures.append(f"{SECURITY_TXT}: Expires {expires.isoformat()} is more than a year away (RFC 9116)")
+    # server/sws.toml serves dot-files so that .well-known can be reached, so nothing else
+    # hidden may ride along in the image.
+    stray = [
+        p.relative_to(root).as_posix()
+        for p in root.rglob("*")
+        if any(part.startswith(".") for part in p.relative_to(root).parts)
+        and p.relative_to(root).as_posix() not in (".well-known", SECURITY_TXT)
+    ]
+    if stray:
+        failures.append(f"hidden files in build output, which the server would serve: {', '.join(sorted(stray))}")
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "public")
     if not root.is_dir():
@@ -510,6 +559,9 @@ def main() -> int:
     # 8. The response headers the server will send hold the same floor, and more.
     check_server_headers(failures)
 
+    # 8b. security.txt is present, well formed and unexpired.
+    check_security_txt(root, base, failures)
+
     # 9. The theme files overridden with modified copies have not moved upstream.
     check_theme_overrides(failures)
 
@@ -522,7 +574,7 @@ def main() -> int:
     print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
     print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve,")
     print("no inline code, CSP at or above the floor in the page and in server/sws.toml,")
-    print("nothing loaded from another origin, theme overrides in sync.")
+    print("nothing loaded from another origin, security.txt valid, theme overrides in sync.")
     return 0
 
 

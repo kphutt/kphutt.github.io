@@ -1,0 +1,14 @@
+{{- /*
+  /.well-known/security.txt, per RFC 9116. Generated so that Expires can never go stale:
+  it is the build time plus 180 days, and the deploy workflow rebuilds monthly, so the
+  date is always at least five months away. The RFC wants it under a year out.
+
+  Field order follows the RFC's own examples. Contact is GitHub's private vulnerability
+  reporting for this repository, so there is no email address to publish. There is no
+  Policy field because there is no policy page to point at.
+*/ -}}
+# Security contact for kphutt.com only. Other services have their own.
+Contact: https://github.com/kphutt/kphutt.github.io/security/advisories/new
+Expires: {{ now.AddDate 0 0 180 | time.Format "2006-01-02T15:04:05Z" }}
+Preferred-Languages: en
+Canonical: {{ "/.well-known/security.txt" | absURL }}

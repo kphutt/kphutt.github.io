@@ -15,6 +15,7 @@ routes by Host, so a candidate URL cannot.
 
 What it checks, against BASE:
   - every URL in the built sitemap returns 200, so no published page has moved;
+  - /.well-known/security.txt returns 200 as text/plain; charset=utf-8;
   - the files indexing relies on (robots.txt, sitemap.xml, llms.txt, the RSS feed and
     the og-image) return 200 with a sensible content type;
   - every stylesheet, icon and preload the homepage links is a relative URL, so it loads
@@ -152,6 +153,12 @@ def main() -> int:
 
     check("/robots.txt", content_type="text/plain")
     check("/llms.txt", content_type="text/plain")
+    # RFC 9116's location. The server serves dot-files only so this can be reached, so also
+    # check that a dot-path that does not exist is a 404.
+    _, sec = check("/.well-known/security.txt", content_type="text/plain; charset=utf-8")
+    if b"Contact:" not in sec or b"Expires:" not in sec:
+        failures.append("/.well-known/security.txt has no Contact or Expires field")
+    check("/.git/config", status=404)
     check("/index.xml", content_type="application/xml")
     check("/og-image.png", content_type="image/png", cache="public, max-age=86400")
     check("/favicon.ico", cache="public, max-age=86400")

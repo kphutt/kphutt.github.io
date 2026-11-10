@@ -8,9 +8,11 @@ name: Build and deploy
 #              the repository variables are set (infra/README.md), so this workflow is
 #              safe to merge before any of that.
 #
-# workflow_dispatch is also the hook for a future scheduled rebuild: a `schedule:` trigger
-# added here runs on main, and the Cloud Run identity trusts push, workflow_dispatch and
-# schedule events (infra/identities.tf), so it would deploy with no other change.
+# The monthly `schedule:` rebuild exists for /.well-known/security.txt: its Expires date is
+# generated at build time (180 days out), so it only stays valid if the site is rebuilt
+# well inside that. A scheduled run executes on main, and the Cloud Run identity trusts
+# push, workflow_dispatch and schedule events (infra/identities.tf), so it deploys like
+# a merge. It costs nothing: Actions is free on a public repo and Cloud Run scales to zero.
 #
 # The required status check is `build`, a summary job at the end that passes only when
 # the site build (`site`), the container smoke test (`image`) and the infra checks
@@ -24,6 +26,8 @@ on:
     branches: ["main"]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 6 1 * *" # the 1st of each month, 06:17 UTC
 
 # Least privilege by default. Only the deploy jobs widen this for themselves, so a build
 # triggered by a pull request never holds a token that can publish anywhere.

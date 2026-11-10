@@ -34,7 +34,11 @@ cache-control-headers = false
 
 compression = true
 directory-listing = false
-ignore-hidden-files = true
+# Off, because the server has no way to exempt one dot-directory and RFC 9116 puts
+# security.txt at /.well-known/. Hidden files are still not served: the image holds only
+# the built site, and scripts/check_build.py fails the build if any dot-file or dot-folder
+# other than .well-known/security.txt is in it.
+ignore-hidden-files = false
 disable-symlinks = true
 
 # Hugo's URLs end in a slash, and GitHub Pages redirects /posts to /posts/. Keep that.
@@ -81,6 +85,11 @@ Cache-Control = "public, max-age=300"
 [[advanced.headers]]
 source = "**/*.xml"
 headers.Content-Type = "application/xml"
+
+# security.txt. The explicit type makes the charset a stated rule, not a server default.
+[[advanced.headers]]
+source = "/.well-known/security.txt"
+headers.Content-Type = "text/plain; charset=utf-8"
 
 # Files whose names never change but whose content might: icons and the og-image.
 [[advanced.headers]]
