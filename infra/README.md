@@ -205,6 +205,27 @@ The guards:
   plan deleting it).
 - `tests/dns.tftest.hcl` pins every name, type, value and MX priority.
 
+## Alerts (`uptime.tf`)
+
+Two emails go to the alert channel, from uptime checks that fetch `https://<name>/` every
+5 minutes from three regions (it must answer 200 with a valid certificate):
+
+- **Site down**: the check fails from two or more regions for about 10 minutes.
+- **TLS certificate expiring**: a certificate has fewer than `uptime_cert_expiry_days` days
+  left (default 14). Google renews its managed certificate long before that, so this means a
+  renewal failed. Each alert says what to do.
+
+Only `next.kphutt.com` is watched today. After the move, add the apex and www with one line
+in the git-ignored `terraform.tfvars`, then apply:
+
+```hcl
+uptime_hostnames = ["next.kphutt.com", "kphutt.com", "www.kphutt.com"]
+```
+
+Cost is $0: uptime checks get 1,000,000 free executions a month per billing account (this
+setup uses about 78,000 with three names), and alerts on uptime metrics are not charged
+([pricing](https://cloud.google.com/stackdriver/pricing)).
+
 ## Cost
 
 Fixed monthly cost is $0. Cloud Run scales to zero and its free tier covers this site's
