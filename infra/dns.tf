@@ -85,7 +85,7 @@ resource "cloudflare_dns_record" "web" {
   lifecycle {
     # The cutover pull request sets this false, with WEB_PREVENT_DESTROY in
     # scripts/check_infra.py, and the next pull request sets both back.
-    prevent_destroy = true
+    prevent_destroy = false
 
     precondition {
       condition     = var.cloudflare_zone_id != ""
