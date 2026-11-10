@@ -457,6 +457,33 @@ def check_mappings(texts: dict[str, str]) -> list[str]:
     return problems
 
 
+# Each ownership check lives in the file of the name it proves, once.
+SITE_VERIFICATIONS = {"apex": SITE_DOMAIN_FILE, "test": "test-domain.tf"}
+
+
+def check_site_verifications(texts: dict[str, str]) -> list[str]:
+    """Every google_site_verification_web_resource is one of SITE_VERIFICATIONS, in its file, once."""
+    problems = []
+    seen = dict.fromkeys(SITE_VERIFICATIONS, 0)
+    for name, text in texts.items():
+        for m in BLOCK.finditer(text):
+            kind, rtype, rname = m.groups()
+            if rtype != "google_site_verification_web_resource":
+                continue
+            where = f"{name}: {kind} {rtype}.{rname}"
+            want = SITE_VERIFICATIONS.get(rname)
+            if kind != "resource" or want is None:
+                problems.append(f"{where}: the only ownership checks are "
+                                + ", ".join(f"google_site_verification_web_resource.{r}" for r in SITE_VERIFICATIONS))
+            elif name != want:
+                problems.append(f"{where}: belongs in {want}")
+            else:
+                seen[rname] += 1
+    problems += [f"{SITE_VERIFICATIONS[r]}: must hold google_site_verification_web_resource.{r} exactly once, found {n}"
+                 for r, n in seen.items() if n != 1]
+    return problems
+
+
 def check_cloudflare(infra: Path = INFRA) -> bool:
     problems = []
     problems += [f"{f.name}: JSON configuration is not covered by this rule; write HCL"
@@ -537,6 +564,7 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
             if attribute(every, key) != [want]:
                 problems.append(f"local.{key} must be defined once, as: {want}")
     problems += check_mappings(texts)
+    problems += check_site_verifications(texts)
     if "local.verification_record_name" in every:
         problems += [f"local.verification_record_name is no longer built under the test name (missing {part})"
                      for part in VERIFICATION_NAME_PARTS if part not in every]
