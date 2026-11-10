@@ -62,31 +62,31 @@ run "checks_the_test_name_by_default" {
   command = plan
 
   assert {
-    condition     = keys(google_monitoring_uptime_check_config.site) == ["next.kphutt.com"]
-    error_message = "By default only next.kphutt.com is checked."
+    condition     = keys(google_monitoring_uptime_check_config.site) == ["kphutt.com", "www.kphutt.com"]
+    error_message = "By default the apex and www are checked."
   }
   assert {
     condition = (
-      google_monitoring_uptime_check_config.site["next.kphutt.com"].http_check[0].path == "/"
-      && google_monitoring_uptime_check_config.site["next.kphutt.com"].http_check[0].port == 443
-      && google_monitoring_uptime_check_config.site["next.kphutt.com"].http_check[0].use_ssl == true
+      google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].path == "/"
+      && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].port == 443
+      && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].use_ssl == true
     )
     error_message = "The check must be an HTTPS GET of / on 443."
   }
   assert {
-    condition     = google_monitoring_uptime_check_config.site["next.kphutt.com"].http_check[0].validate_ssl == true
+    condition     = google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].validate_ssl == true
     error_message = "The check must validate the certificate, or a bad one goes unseen."
   }
   assert {
-    condition     = google_monitoring_uptime_check_config.site["next.kphutt.com"].http_check[0].accepted_response_status_codes[0].status_value == 200
+    condition     = google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].accepted_response_status_codes[0].status_value == 200 && google_monitoring_uptime_check_config.site["kphutt.com"].http_check[0].accepted_response_status_codes[1].status_value == 301
     error_message = "The check must expect exactly 200."
   }
   assert {
-    condition     = google_monitoring_uptime_check_config.site["next.kphutt.com"].period == "300s"
+    condition     = google_monitoring_uptime_check_config.site["kphutt.com"].period == "300s"
     error_message = "The check runs every 5 minutes."
   }
   assert {
-    condition     = length(google_monitoring_uptime_check_config.site["next.kphutt.com"].selected_regions) >= 3
+    condition     = length(google_monitoring_uptime_check_config.site["kphutt.com"].selected_regions) >= 3
     error_message = "Three or more regions are needed, or the down alert (2 regions failing) can never fire for one name."
   }
 }

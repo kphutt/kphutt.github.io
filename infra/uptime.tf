@@ -6,9 +6,9 @@
 # that fails stays silent until the old certificate expires and browsers refuse the site, so
 # the certificate alert fires with plenty of time left to fix it.
 #
-# To watch the apex and www after the move, add them to uptime_hostnames (terraform.tfvars):
-#
-#   uptime_hostnames = ["next.kphutt.com", "kphutt.com", "www.kphutt.com"]
+# The live names are watched whoever serves them, so the same checks cover GitHub Pages
+# today, the move itself, and Cloud Run after it. www answers with a 301 to the apex, so a
+# 301 counts as healthy as well as a 200.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
 # region counts as one execution per period. 3 names x 3 regions x one check per 5 minutes
@@ -17,9 +17,9 @@
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
 variable "uptime_hostnames" {
-  description = "Hostnames to watch over HTTPS (GET /, expect 200, valid certificate). Add kphutt.com and www.kphutt.com once the site has moved."
+  description = "Hostnames to watch over HTTPS (GET /, expect 200 or 301, valid certificate)."
   type        = list(string)
-  default     = ["next.kphutt.com"]
+  default     = ["kphutt.com", "www.kphutt.com"]
 
   validation {
     condition = (
@@ -64,6 +64,9 @@ resource "google_monitoring_uptime_check_config" "site" {
 
     accepted_response_status_codes {
       status_value = 200
+    }
+    accepted_response_status_codes {
+      status_value = 301
     }
   }
 
