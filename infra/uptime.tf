@@ -7,9 +7,11 @@
 # the old certificate expires and browsers refuse the site, so the certificate alert fires
 # with plenty of time left to fix it.
 #
-# www answers with a 301 to the apex, so the names in uptime_redirect_hostnames accept a 301;
-# every other name must answer 200. The checks fetch /robots.txt, a few hundred bytes, so they
-# add almost no outbound data.
+# Google follows every redirect and judges the final answer, so a name that redirects (www
+# goes to the apex) is held to the final 200. That still proves its certificate handshake and
+# that the redirect lands on a live page. For such a name the certificate-expiry alert
+# measures the final host's certificate. Every name must end at 200. The checks fetch
+# /robots.txt, a few hundred bytes, so they add almost no outbound data.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
 # region counts as one execution per period. 2 names x 3 regions x one check per 15 minutes
@@ -18,7 +20,7 @@
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
 variable "uptime_hostnames" {
-  description = "Hostnames to watch over HTTPS (GET /robots.txt, valid certificate). Each must answer 200, unless it is also in uptime_redirect_hostnames."
+  description = "Hostnames to watch over HTTPS (GET /robots.txt, valid certificate). Each must end at 200 after any redirects."
   type        = list(string)
   default     = ["kphutt.com", "www.kphutt.com"]
 
@@ -28,17 +30,6 @@ variable "uptime_hostnames" {
       && alltrue([for h in var.uptime_hostnames : can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])*kphutt[.]com$", h))])
     )
     error_message = "uptime_hostnames must be a non-empty list of lowercase kphutt.com names (the apex or a subdomain)."
-  }
-}
-
-variable "uptime_redirect_hostnames" {
-  description = "Names in uptime_hostnames that redirect (301) instead of answering 200. Every other name must answer 200."
-  type        = list(string)
-  default     = ["www.kphutt.com"]
-
-  validation {
-    condition     = alltrue([for h in var.uptime_redirect_hostnames : contains(var.uptime_hostnames, h)])
-    error_message = "uptime_redirect_hostnames must be a subset of uptime_hostnames."
   }
 }
 
@@ -74,12 +65,9 @@ resource "google_monitoring_uptime_check_config" "site" {
     validate_ssl   = true
     request_method = "GET"
 
-    # One accepted code per name: 301 for the redirecting names, 200 for the rest.
-    dynamic "accepted_response_status_codes" {
-      for_each = [contains(var.uptime_redirect_hostnames, each.value) ? 301 : 200]
-      content {
-        status_value = accepted_response_status_codes.value
-      }
+    # One accepted code per name: the final 200.
+    accepted_response_status_codes {
+      status_value = 200
     }
   }
 

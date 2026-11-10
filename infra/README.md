@@ -208,7 +208,7 @@ The guards:
 ## Alerts (`uptime.tf`)
 
 Two emails go to the alert channel, from uptime checks that fetch `https://<name>/robots.txt`
-every 15 minutes from three regions (it must answer 200, or 301 for `www`, with a valid
+every 15 minutes from three regions (it must end at 200 after any redirects, with a valid
 certificate):
 
 - **Site down**: the check fails from two or more regions for 30 minutes (two checks in a row).
@@ -217,9 +217,10 @@ certificate):
   means a renewal failed. Each alert says what to do, for whichever of the two serves the name.
 
 `kphutt.com` and `www.kphutt.com` are watched by default, whoever serves them, so the same
-checks cover the move. Only the names in `uptime_redirect_hostnames` (default: `www`, which
-redirects to the apex) may answer 301; every other name must answer 200. To watch another
-name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
+checks cover the move. Google follows redirects and judges the final answer, so `www`, which
+redirects to the apex, is held to the final 200. That still proves its certificate handshake
+and that the redirect lands on a live page. Its certificate-expiry alert measures the apex's
+certificate. To watch another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
 
 Cost is $0: uptime checks get 1,000,000 free executions a month per billing account (this
 setup uses about 17,000 with two names), alerts on uptime metrics are not charged, and
