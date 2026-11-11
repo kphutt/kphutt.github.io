@@ -216,7 +216,7 @@ TEST_NAME = "next.kphutt.com"
 # prevent_destroy on the web records (the apex and www). It must match dns.tf. Both stay "true"
 # except during a rollback, which deletes the four AAAA records, so its pull request sets both
 # to "false" first (docs/design/cutover-runbook.md).
-# The mail records have no such setting: their prevent_destroy is always "true".
+# The mail records need no such constant: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
 # The two production resources: the list each one runs over, the record types that list may
 # hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether

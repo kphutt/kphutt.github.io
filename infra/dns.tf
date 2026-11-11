@@ -10,8 +10,8 @@
 # covers a whole resource:
 #
 #   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). Its
-#     prevent_destroy stays on. A rollback deletes the four AAAA records, so a rollback pull
-#     request lifts it, together with the matching line in scripts/check_infra.py.
+#     prevent_destroy is on. A rollback deletes the four AAAA records, so a rollback pull
+#     request turns it off here and in scripts/check_infra.py.
 #   - cloudflare_dns_record.mail: MX, SPF, DKIM and DMARC. Its prevent_destroy never comes off;
 #     scripts/check_infra.py has no setting that allows it.
 #
