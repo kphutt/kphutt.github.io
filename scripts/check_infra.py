@@ -220,12 +220,12 @@ TEST_NAME = "next.kphutt.com"
 # to "false" first (docs/design/cutover-runbook.md).
 # The mail records need no such constant: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
-# The two production resources: the list each one runs over, the record types that list may
+# The three production resources: the list each one runs over, the record types that list may
 # hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
 # an entry may be a record that does not exist yet (id = null, so its import is skipped and
-# the apply creates it). Only the web list may: the cutover adds the apex's new records
-# before Cloudflare has given them ids, and the pull request after the apply writes the ids
-# in. Every mail record exists and is adopted. A rule may also carry "name_ok" and "value_ok",
+# the apply creates it). The web and services lists may, because a new record has no
+# Cloudflare id until the apply creates it. A later pull request writes the id in. Every mail
+# record exists and is adopted. A rule may also carry "name_ok" and "value_ok",
 # checks on the name and the content of every entry.
 #
 # Names a service record may never take: the live site, the test name, and anything that is
