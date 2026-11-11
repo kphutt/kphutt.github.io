@@ -167,18 +167,20 @@ The apply:
 
 The ownership record is the DNS record that proves to Google you own kphutt.com. Cloud Run
 needed that proof to map kphutt.com and www, and Google re-checks it from time to time.
-Three guards protect it and the two mappings:
+Four guards protect it and the two mappings:
 
 - A precondition limits its name to one label of letters, digits and hyphens directly under
   kphutt.com, never `www` or the test name `next`.
+- A precondition pins the record to the token Google gave when this was set up. Google gives
+  each account its own token, so the pin is in `apex_verification_expected`.
 - `scripts/check_infra.py` refuses the record outside `site-domain.tf`, and requires the
-  Site Verification resource and both mappings in it.
+  Site Verification resource and both mappings in it. It also requires both preconditions.
 - `prevent_destroy` stops OpenTofu from deleting the record or either mapping.
 
-None of these stops a change of account, though. The record contains a code from the Google
-account that runs OpenTofu. Applying another account's plan swaps in that account's code and
-removes your proof. Run OpenTofu as the account that set this up, and stop if a plan changes
-this record.
+A change of account used to slip past all of these. The record holds a code from the Google
+account that runs OpenTofu, and another account's plan swaps in its own code. That removes
+your proof. Now such a plan stops with an error. Run OpenTofu as the account that set this
+up, and change the pin only in a reviewed change.
 
 ## Production DNS (`dns.tf`)
 

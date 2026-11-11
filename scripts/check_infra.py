@@ -183,8 +183,13 @@ APEX_VERIFICATION_LINES = {
     "apex_verification_label_ok": 'can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", '
                                   'local.apex_verification_label)) && local.apex_verification_label != "www" '
                                   '&& local.apex_verification_record_name != var.test_hostname',
+    "apex_verification_is_pinned": '"${local.apex_verification_label} ${local.apex_verification_target}" '
+                                   '== var.apex_verification_expected',
 }
 APEX_VERIFICATION_PRECONDITION = "local.apex_verification_label_ok"
+# Google gives each account its own token, so a plan from another account would update the
+# record in place. The record's precondition pins the token to apex_verification_expected.
+APEX_VERIFICATION_PIN_PRECONDITION = "local.apex_verification_is_pinned"
 
 
 def _ipv4(v: str) -> bool:
@@ -544,6 +549,10 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
                 if APEX_VERIFICATION_PRECONDITION not in body:
                     problems.append(f"{where}: missing the precondition that checks the token's label "
                                     f"({APEX_VERIFICATION_PRECONDITION})")
+                if not re.search(r"^\s*condition\s*=\s*" + re.escape(APEX_VERIFICATION_PIN_PRECONDITION) + r"\s*$",
+                                 body, re.M):
+                    problems.append(f"{where}: missing the precondition that pins the token to the account "
+                                    f"that set this up (condition = {APEX_VERIFICATION_PIN_PRECONDITION})")
     for resource in PRODUCTION:
         if production[resource] != 1:
             problems.append(f"{PRODUCTION_FILE}: must hold resource cloudflare_dns_record.{resource} "

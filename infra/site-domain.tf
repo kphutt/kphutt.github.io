@@ -29,6 +29,7 @@ locals {
   apex_verification_target      = length(local.apex_verification_parts) == 2 ? lower(trimsuffix(local.apex_verification_parts[1], ".")) : ""
   apex_verification_label_ok    = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", local.apex_verification_label)) && local.apex_verification_label != "www" && local.apex_verification_record_name != var.test_hostname
   apex_verification_target_ok   = can(regex("^[a-z0-9-]+[.]dv[.]googlehosted[.]com$", local.apex_verification_target))
+  apex_verification_is_pinned   = "${local.apex_verification_label} ${local.apex_verification_target}" == var.apex_verification_expected
 
   # What the apex mapping asks for: Google's front-end addresses, the same set the test name
   # got (a mapped name that is itself the verified name is treated as a bare domain).
@@ -81,6 +82,12 @@ resource "cloudflare_dns_record" "apex_verification" {
     precondition {
       condition     = length(local.apex_verification_parts) == 2 && local.apex_verification_label_ok && local.apex_verification_target_ok
       error_message = "Google's DNS_CNAME token for kphutt.com was not \"<one plain label> <name>.dv.googlehosted.com\", or its label is www or the test name."
+    }
+    # Google returns a different token to each Google account, and an in-place update of this
+    # record would remove the first account's proof. So the token is pinned in code.
+    precondition {
+      condition     = local.apex_verification_is_pinned
+      error_message = "Google's ownership token for kphutt.com is not the pinned one (apex_verification_expected). It came from a different Google account than the one that set this up. Run OpenTofu as that account. Change the pin only in a reviewed change."
     }
     precondition {
       condition     = lookup(local.allowed_record_name, local.apex_verification_record_name, false)

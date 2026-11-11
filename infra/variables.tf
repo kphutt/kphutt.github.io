@@ -99,6 +99,15 @@ variable "test_hostname" {
   }
 }
 
+# Google gives each account its own token. A plan run by another account would update the
+# ownership record in place and remove the first account's proof, so site-domain.tf refuses
+# any token that is not this one. Both parts are in public DNS: not a secret.
+variable "apex_verification_expected" {
+  description = "The ownership token this site was set up with, \"<label> <target>\", as published in DNS. A plan that gets another token fails."
+  type        = string
+  default     = "ivmjabtw4d5a gv-eq4qbtmh2utczh.dv.googlehosted.com"
+}
+
 variable "cloudflare_zone_id" {
   description = "The kphutt.com zone id, from the zone's Overview page in Cloudflare. Not a secret. Every plan needs it: dns.tf manages the zone's production records."
   type        = string
