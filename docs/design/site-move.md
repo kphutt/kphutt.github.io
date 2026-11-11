@@ -1,8 +1,7 @@
 # Moving the site from GitHub Pages to Cloud Run
 
 Status: the move is done, and the site is served from Cloud Run. GitHub Pages is still on in
-the repository settings until its owner turns it off. The text below is the plan, with notes
-where it has since been done.
+the repository settings until its owner turns it off. The text below is the plan, with notes added where its steps are done.
 
 ## Why
 
@@ -95,8 +94,8 @@ Each step is its own pull request, through the normal gate.
    and zero requests to other domains; an Observatory grade.
 5. **Apex cutover, then retire Pages** ([runbook](cutover-runbook.md), with the exact
    records to restore). The records' TTL is already five minutes, so a change and its undo
-   both take effect quickly. Pages kept serving until the new site was verified. Then it
-   was retired: the Pages deploy job and `static/CNAME` were removed, the in-page CSP was
+   both take effect quickly. Pages kept serving until the new site was verified. Then its
+   retirement began: the Pages deploy job and `static/CNAME` were removed, the in-page CSP was
    dropped, and `AGENTS.md` was updated. The required check stays `build`, so branch
    protection did not change.
 

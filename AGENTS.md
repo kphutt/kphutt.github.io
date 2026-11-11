@@ -71,14 +71,14 @@ in CI.
   Cloudflare records are DNS only.
   Google issues and renews the certificate. `www` redirects to the apex in one 301, and plain
   `http://` redirects to HTTPS.
-- DNS is hosted at Cloudflare and is code. The site and mail records are in `infra/dns.tf`,
+- DNS is hosted at Cloudflare and managed as code. The site and mail records are in `infra/dns.tf`,
   and the rest sit beside the mappings that need them. Change a record in its file, then plan
-  and apply (`infra/README.md`). A change made in the Cloudflare dashboard is overwritten by
+  and apply (`infra/README.md`). A record changed in the Cloudflare dashboard is put back by
   the next plan and apply.
 - Alerts, not dashboards: an uptime check and a certificate-expiry check email when the site
   is down or a certificate is running out (`infra/uptime.tf`). A billing budget takes the site
-  offline soon after spending passes a limit (`infra/cost-cutoff/`). Google reports costs
-  hours late, so spending can pass the limit first.
+  offline once Google reports spending past a limit (`infra/cost-cutoff/`). Google reports
+  costs hours late, so spending can pass the limit first.
 - `baseURL` in `hugo.toml` decides every absolute URL in the build. The workflow deliberately
   does not pass `--baseURL`; the comment there explains why.
 
@@ -96,7 +96,7 @@ again for Cloud Run. It is recorded here so nobody proposes it again.
 Google issues and renews the certificate for a mapped name by checking, over plain HTTP on
 port 80, that the name's DNS points at Google. Putting a reverse proxy in front of the
 mapping breaks that check. DNS then resolves to the proxy, and the request meant for Google is
-intercepted. Renewal fails quietly: the existing certificate is still valid, so nothing looks
+intercepted. Renewal can fail quietly: the existing certificate is still valid, so nothing looks
 wrong for weeks. When it expires, an SSL mode of Full (strict) means the proxy validates the
 origin certificate, finds it expired, and refuses to connect at all. The site goes down, and
 recovery is to turn the proxy off and wait for Google to reissue.

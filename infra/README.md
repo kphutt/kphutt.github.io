@@ -148,7 +148,7 @@ re-checks ownership from time to time and drops it once the CNAME is gone.
 The mappings that serve `kphutt.com` and `www.kphutt.com` from Cloud Run, and the proof
 that the account running OpenTofu owns `kphutt.com`. Always on. A mapping serves a name only
 while that name's DNS points at Google. The apex and `www` records that point there are in
-`dns.tf`, so applying this file alone never moves traffic.
+`dns.tf`, so creating or changing a mapping never moves traffic by itself.
 
 The apply:
 
@@ -265,8 +265,8 @@ certificate):
 
 - **Site down**: the check fails from two or more regions for 30 minutes (two checks in a row).
 - **TLS certificate expiring**: a certificate has fewer than `uptime_cert_expiry_days` days
-  left (default 14). Google renews its managed certificates long before that, so this
-  means a renewal failed. Each alert says what to do.
+  left (default 14). Google renews its managed certificates automatically, so this
+  means it has not been renewed yet. Each alert says what to do.
 
 `kphutt.com` and `www.kphutt.com` are watched by default. Google follows redirects and judges the final answer, so `www`, which
 redirects to the apex, is held to the final 200. That still proves its certificate handshake

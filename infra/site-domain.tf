@@ -109,7 +109,8 @@ resource "google_site_verification_web_resource" "apex" {
 }
 
 # 3. The mappings. DNS points at them, so deleting one takes that name off the internet.
-#    Neither can be deleted through OpenTofu without a reviewed change to its lifecycle.
+#    Neither can be deleted through OpenTofu while prevent_destroy is set, and removing it
+#    is a change to review.
 resource "google_cloud_run_domain_mapping" "apex" {
   location = var.region
   name     = local.zone_name
