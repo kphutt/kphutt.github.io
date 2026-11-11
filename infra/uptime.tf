@@ -2,9 +2,9 @@
 # about to expire. Both email the existing alert channel (monitoring.tf). Alerts, not
 # dashboards: nothing here is meant to be looked at.
 #
-# Cloud Run serves both names, and Google renews their certificates by itself. A renewal that
-# fails stays silent until the old certificate expires and browsers refuse the site. So the
-# certificate alert fires with plenty of time left to fix it.
+# Cloud Run serves kphutt.com and www, and Google renews their certificates automatically.
+# Nothing in this setup emails when a renewal fails, so the certificate alert warns once fewer
+# than 14 days remain (the default).
 #
 # Google follows every redirect and judges the final answer, so a name that redirects (www
 # goes to the apex) is held to the final 200. That still proves its certificate handshake and
@@ -33,7 +33,7 @@ variable "uptime_hostnames" {
 }
 
 variable "uptime_cert_expiry_days" {
-  description = "Email when a certificate has fewer than this many days left. Google renews its managed certificates well before this, so reaching it means a renewal has failed."
+  description = "Email when a certificate has fewer than this many days left. This is the alert threshold."
   type        = number
   default     = 14
 
@@ -116,7 +116,12 @@ resource "google_monitoring_alert_policy" "site_down" {
       What it means: the uptime check for this site has failed from two or more regions for about 30 minutes. Visitors probably cannot load it, or the certificate no longer validates.
 
       What to do:
-      1. Open the site in a browser. Then check public DNS still points at Google. kphutt.com should have the A records 216.239.32.21, .34.21, .36.21 and .38.21, and the AAAA records 2001:4860:4802:32::15, :34::15, :36::15 and :38::15. www should be a CNAME to ghs.googlehosted.com. If not, compare with infra/dns.tf (infra/README.md, "Production DNS").
+      1. Open the site in a browser. Then check that public DNS still points at Google:
+         - kphutt.com A: 216.239.32.21, 216.239.34.21, 216.239.36.21, 216.239.38.21
+         - kphutt.com AAAA: 2001:4860:4802:32::15, 2001:4860:4802:34::15, 2001:4860:4802:36::15, 2001:4860:4802:38::15
+         - www.kphutt.com CNAME: ghs.googlehosted.com
+
+         If they differ, compare with infra/dns.tf (infra/README.md, "Production DNS").
       2. Check the Cloudflare records are DNS-only (not proxied). See AGENTS.md, "Do not turn the DNS proxy on".
       3. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}`. The status can lag behind what is served, so trust a real HTTPS request over it. For a bad deploy, use the `rollback.yml` workflow.
       4. If the cost cutoff has turned the site off (cost-cutoff.md), this alert is expected. Reopen the site per that doc.
@@ -156,12 +161,13 @@ resource "google_monitoring_alert_policy" "cert_expiring" {
     mime_type = "text/markdown"
     subject   = "TLS certificate expiring: $${resource.label.host}"
     content   = <<-EOT
-      What it means: the certificate for the host named above has fewer than ${var.uptime_cert_expiry_days} days left. Google renews its managed certificates long before that, so a renewal has failed. When it expires, browsers will refuse the site. If the host redirects (www), this alert measures the certificate of the host it redirects to (kphutt.com), so check that one first. This alert does not cover www's own certificate.
+      What it means: the certificate served for the host named in this alert has fewer than ${var.uptime_cert_expiry_days} days left. For www, that is kphutt.com's certificate, because the check follows www's redirect to kphutt.com. This alert does not cover www's own certificate. If it expires before Google replaces it, browsers will refuse the site.
 
       What to do:
-      1. Check public DNS still points at Google, as in the "Site down" alert, step 1, and that the records are DNS-only (not proxied). Google renews only while both hold. See AGENTS.md, "Do not turn the DNS proxy on".
-      2. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`). Its certificate condition says why provisioning is stuck.
-      3. If DNS and the proxy setting are right and it still does not recover, recreate the domain mapping in OpenTofu, well before the expiry date. The name is down from the delete until Google issues the new certificate. The mapping's `prevent_destroy` has to come off first, in a reviewed pull request.
+      1. Check that public DNS still points at Google, with the records in infra/dns.tf. kphutt.com should have four A and four AAAA records, and www should be a CNAME to ghs.googlehosted.com.
+      2. Also check that the records are DNS-only (not proxied). Google renews only while DNS points at it and is not proxied. See AGENTS.md, "Do not turn the DNS proxy on".
+      3. Check the mapping for kphutt.com (`gcloud beta run domain-mappings describe --domain kphutt.com --region ${var.region} --project ${var.project_id}`), and the same for www.kphutt.com. While the certificate is pending, its CertificateProvisioned condition gives Google's reason.
+      4. If DNS and the proxy are right but the certificate is still not replaced with a week left, recreate the mapping. First, in a reviewed pull request, lift its `prevent_destroy` and the matching rule in scripts/check_infra.py. The site is unreachable at that name from the deletion until Google issues the new certificate.
     EOT
   }
 }
