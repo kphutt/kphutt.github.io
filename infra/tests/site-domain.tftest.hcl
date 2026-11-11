@@ -184,6 +184,10 @@ run "with_the_test_name_on_the_names_stay_apart" {
 run "a_token_naming_www_is_refused" {
   command = plan
 
+  variables {
+    apex_verification_expected = "www gv-mockedapex.dv.googlehosted.com"
+  }
+
   override_data {
     target = data.google_site_verification_token.apex
     values = {
@@ -197,6 +201,10 @@ run "a_token_naming_www_is_refused" {
 # The apex serves the live site.
 run "a_token_naming_the_apex_is_refused" {
   command = plan
+
+  variables {
+    apex_verification_expected = "kphutt.com gv-mockedapex.dv.googlehosted.com"
+  }
 
   override_data {
     target = data.google_site_verification_token.apex
@@ -212,6 +220,10 @@ run "a_token_naming_the_apex_is_refused" {
 run "a_token_naming_the_apex_with_a_dot_is_refused" {
   command = plan
 
+  variables {
+    apex_verification_expected = "kphutt.com gv-mockedapex.dv.googlehosted.com"
+  }
+
   override_data {
     target = data.google_site_verification_token.apex
     values = {
@@ -225,6 +237,10 @@ run "a_token_naming_the_apex_with_a_dot_is_refused" {
 # _dmarc is mail's (dns.tf).
 run "a_token_naming_a_mail_name_is_refused" {
   command = plan
+
+  variables {
+    apex_verification_expected = "_dmarc gv-mockedapex.dv.googlehosted.com"
+  }
 
   override_data {
     target = data.google_site_verification_token.apex
@@ -240,6 +256,10 @@ run "a_token_naming_a_mail_name_is_refused" {
 run "a_token_naming_a_deeper_name_is_refused" {
   command = plan
 
+  variables {
+    apex_verification_expected = "google._domainkey gv-mockedapex.dv.googlehosted.com"
+  }
+
   override_data {
     target = data.google_site_verification_token.apex
     values = {
@@ -253,6 +273,10 @@ run "a_token_naming_a_deeper_name_is_refused" {
 # next.kphutt.com belongs to test-domain.tf.
 run "a_token_naming_the_test_name_is_refused" {
   command = plan
+
+  variables {
+    apex_verification_expected = "next gv-mockedapex.dv.googlehosted.com"
+  }
 
   override_data {
     target = data.google_site_verification_token.apex
@@ -268,6 +292,10 @@ run "a_token_naming_the_test_name_is_refused" {
 run "a_token_without_a_target_is_refused" {
   command = plan
 
+  variables {
+    apex_verification_expected = " "
+  }
+
   override_data {
     target = data.google_site_verification_token.apex
     values = {
@@ -282,6 +310,10 @@ run "a_token_without_a_target_is_refused" {
 run "a_token_pointing_elsewhere_is_refused" {
   command = plan
 
+  variables {
+    apex_verification_expected = "abc123def verify.example.com"
+  }
+
   override_data {
     target = data.google_site_verification_token.apex
     values = {
@@ -295,6 +327,10 @@ run "a_token_pointing_elsewhere_is_refused" {
 # An empty label would be the apex.
 run "a_token_with_an_empty_label_is_refused" {
   command = plan
+
+  variables {
+    apex_verification_expected = " gv-mockedapex.dv.googlehosted.com"
+  }
 
   override_data {
     target = data.google_site_verification_token.apex
