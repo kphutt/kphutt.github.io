@@ -32,9 +32,9 @@ locals {
   # www.kphutt.com.
   #
   # Cloud Run, by domain mapping: exactly the records the mappings in site-domain.tf ask for
-  # (tests/dns.tftest.hcl checks they match). The four A records and www are the records
-  # that pointed at GitHub Pages, changed in place, so they keep their ids and their keys
-  # (named for the Pages addresses they held at import). The AAAA ids are written in too, so
+  # (tests/dns.tftest.hcl checks they match). The four A records and www once pointed at
+  # GitHub Pages. The cutover changed them in place, so they keep their ids, and their keys
+  # still name the Pages addresses they held at import. The AAAA ids are written in too, so
   # a fresh state adopts the existing records instead of making copies.
   web_records = {
     "apex-a-108"   = { id = "55afe9d65f67573aabad45aa75d90068", name = "kphutt.com", type = "A", content = "216.239.32.21", priority = null }
@@ -92,8 +92,8 @@ resource "cloudflare_dns_record" "web" {
   proxied = false
 
   lifecycle {
-    # A rollback pull request sets this false, with WEB_PREVENT_DESTROY in
-    # scripts/check_infra.py, and the re-lock pull request after it sets both back.
+    # A rollback pull request sets this and WEB_PREVENT_DESTROY in scripts/check_infra.py
+    # to false. The re-lock pull request after it sets both back to true.
     prevent_destroy = true
 
     precondition {
