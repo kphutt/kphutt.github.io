@@ -6,7 +6,7 @@
 # full, so any change to a record is a line in this file and a diff in review. tests/dns.tftest.hcl repeats the values, so a change has
 # to be made in both places, on purpose.
 #
-# Two resources, each with its own list, import block and lifecycle, because prevent_destroy
+# Three resources, each with its own list, import block and lifecycle, because prevent_destroy
 # covers a whole resource:
 #
 #   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). Its
@@ -14,6 +14,10 @@
 #     request turns it off here and in scripts/check_infra.py.
 #   - cloudflare_dns_record.mail: MX, SPF, DKIM and DMARC. Its prevent_destroy never comes off;
 #     scripts/check_infra.py has no setting that allows it.
+#   - cloudflare_dns_record.services: records for other services that run under kphutt.com,
+#     each managed by another project. Only a CNAME to ghs.googlehosted.com, named one label
+#     under the zone. Its prevent_destroy never comes off either. The mapping and certificate
+#     for each live in that service's own project, not here.
 #
 # The test name's records (next.kphutt.com and its ownership CNAME) are not here: they belong
 # to test-domain.tf, and scripts/check_infra.py keeps the two files apart.
@@ -48,6 +52,15 @@ locals {
     "www"          = { id = "3bd7a0279c94812f42f2b49583660110", name = "www.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
+  # Other services' records. Only CNAMEs to ghs.googlehosted.com, named one label under
+  # kphutt.com. Never the apex, www, next or an underscore name (scripts/check_infra.py).
+  # lodestar.kphutt.com is the lodestar service's Cloud Run domain mapping, read from that
+  # mapping's status. id null: a new record, created by the apply. The pull request after
+  # the apply writes in the id Cloudflare gave it.
+  service_records = {
+    "lodestar" = { id = null, name = "lodestar.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
+  }
+
   # Email. Only MX and TXT records.
   mail_records = {
     "mx-aspmx"        = { id = "c776340c6002a3766293ea4b552a91c8", name = "kphutt.com", type = "MX", content = "aspmx.l.google.com", priority = 10 }
@@ -66,11 +79,17 @@ locals {
 # Adopts each existing record into state. Once a record is in state, its import block does
 # nothing; it stays so that a fresh state adopts the same records rather than creating copies.
 # Only the offline tests turn it off (var.import_production_dns): `tofu test` cannot import.
-# A web record written before it exists has id = null: it is skipped here and the apply
+# A web or service record written before it exists has id = null: it is skipped here and the apply
 # creates it. The pull request after that apply writes its id in (docs/design/cutover-runbook.md).
 import {
   for_each = var.import_production_dns ? { for k, v in local.web_records : k => v if v.id != null } : {}
   to       = cloudflare_dns_record.web[each.key]
+  id       = "${var.cloudflare_zone_id}/${each.value.id}"
+}
+
+import {
+  for_each = var.import_production_dns ? { for k, v in local.service_records : k => v if v.id != null } : {}
+  to       = cloudflare_dns_record.services[each.key]
   id       = "${var.cloudflare_zone_id}/${each.value.id}"
 }
 
@@ -115,6 +134,27 @@ resource "cloudflare_dns_record" "mail" {
 
   lifecycle {
     # Never lifted. Losing a mail record loses mail.
+    prevent_destroy = true
+
+    precondition {
+      condition     = var.cloudflare_zone_id != ""
+      error_message = "Set cloudflare_zone_id: the production records in dns.tf need it for every plan."
+    }
+  }
+}
+
+resource "cloudflare_dns_record" "services" {
+  for_each = local.service_records
+  zone_id  = var.cloudflare_zone_id
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  priority = each.value.priority
+  ttl      = 1
+  proxied  = false
+
+  lifecycle {
+    # Never lifted. Removing a service's record takes two reviewed steps.
     prevent_destroy = true
 
     precondition {
