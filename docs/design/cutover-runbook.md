@@ -54,9 +54,8 @@ lines, and nothing else about the guards:
 - `scripts/check_infra.py`: `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
 
 The check fails if only one of them changes, and it refuses `prevent_destroy = false` on
-`cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. The switch (pull request B,
-below) put the unlock in its own commit. So during the watch after it, reverting only the
-switch commit could undo the switch. Pull request C (below) then set both lines back to `true`.
+`cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. Pull request C (below) set
+both lines back to `true`.
 
 ## Step 4: prove it on `next.kphutt.com`
 
