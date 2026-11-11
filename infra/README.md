@@ -193,8 +193,8 @@ resources:
   DMARC TXT records.
 - `cloudflare_dns_record.services` (list `local.service_records`): `lodestar.kphutt.com`, a
   CNAME to `ghs.googlehosted.com` for the lodestar service, which runs in its own Google
-  Cloud project. Its domain mapping and certificate are managed there. The guards below
-  allow this list only CNAMEs to Google's mapping host, one label under the zone.
+  Cloud project. Its domain mapping and certificate are managed there. In this list, the
+  guards below allow only CNAMEs to Google's mapping host, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
 resource: the cutover has to unlock the web records without unlocking mail or the services.
@@ -240,10 +240,10 @@ The guards:
     `WEB_PREVENT_DESTROY = "true"` to `"false"` in `scripts/check_infra.py`. Either line alone
     fails the check. A later pull request sets both back (`docs/design/cutover-runbook.md`
     says when).
-- `scripts/check_infra.py` fails unless `dns.tf` holds only these three resources, each over its
-  own fixed list with one literal line per record and its own import block, DNS only,
-  automatic TTL and `prevent_destroy` as above. Each list allows only its own kind of record,
-  so a record cannot be moved between lists to unlock it:
+- `scripts/check_infra.py` fails unless `dns.tf` holds only these three resources. Each has
+  its own fixed list, with one literal line per record, its own import block, DNS only,
+  automatic TTL and `prevent_destroy` as above. Each list allows only its own kind of
+  record, so a record cannot be moved between lists to unlock it:
   - web: A, AAAA and CNAME records named `kphutt.com` or `www.kphutt.com`
   - mail: MX and TXT
   - services: CNAMEs to `ghs.googlehosted.com`, one label under the zone
