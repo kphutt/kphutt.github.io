@@ -9,9 +9,9 @@
 # Two resources, each with its own list, import block and lifecycle, because prevent_destroy
 # covers a whole resource:
 #
-#   - cloudflare_dns_record.web: the apex and www, the records the cutover replaces
-#     (docs/design/cutover-runbook.md). Its prevent_destroy is lifted only by the cutover pull
-#     request, together with the matching line in scripts/check_infra.py, and put back after.
+#   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). Its
+#     prevent_destroy is on. A rollback deletes the four AAAA records, so a rollback pull
+#     request turns it off here and in scripts/check_infra.py.
 #   - cloudflare_dns_record.mail: MX, SPF, DKIM and DMARC. Its prevent_destroy never comes off;
 #     scripts/check_infra.py has no setting that allows it.
 #
@@ -32,19 +32,19 @@ locals {
   # www.kphutt.com.
   #
   # Cloud Run, by domain mapping: exactly the records the mappings in site-domain.tf ask for
-  # (tests/dns.tftest.hcl checks they match). The four A records and www are the records
-  # that pointed at GitHub Pages, changed in place, so they keep their ids and their keys
-  # (named for the Pages addresses they held at import). The AAAA records are new: id null
-  # until the pull request after the cutover writes in the ids Cloudflare gave them.
+  # (tests/dns.tftest.hcl checks they match). The four A records and www once pointed at
+  # GitHub Pages. The cutover changed them in place, so they keep their ids, and their keys
+  # still name the Pages addresses they held at import. The AAAA ids are written in too, so
+  # a fresh state adopts the existing records instead of making copies.
   web_records = {
     "apex-a-108"   = { id = "55afe9d65f67573aabad45aa75d90068", name = "kphutt.com", type = "A", content = "216.239.32.21", priority = null }
     "apex-a-109"   = { id = "fa6a0db99be0d3e74bd79e7b5d88b9c5", name = "kphutt.com", type = "A", content = "216.239.34.21", priority = null }
     "apex-a-110"   = { id = "3047fb9505626052d92b6137b5bb8e96", name = "kphutt.com", type = "A", content = "216.239.36.21", priority = null }
     "apex-a-111"   = { id = "cf17f747d6448bf119074e194a5992ec", name = "kphutt.com", type = "A", content = "216.239.38.21", priority = null }
-    "apex-aaaa-32" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:32::15", priority = null }
-    "apex-aaaa-34" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:34::15", priority = null }
-    "apex-aaaa-36" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:36::15", priority = null }
-    "apex-aaaa-38" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:38::15", priority = null }
+    "apex-aaaa-32" = { id = "c4a6733117dcc00bf07c8215d804d7db", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:32::15", priority = null }
+    "apex-aaaa-34" = { id = "6bfa19e5ac014736d66ab63497a85152", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:34::15", priority = null }
+    "apex-aaaa-36" = { id = "42ccef79bcd652b053ba3c6161059790", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:36::15", priority = null }
+    "apex-aaaa-38" = { id = "4a0cfcfbe87b0fba2852ea1ef3f30f5b", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:38::15", priority = null }
     "www"          = { id = "3bd7a0279c94812f42f2b49583660110", name = "www.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
@@ -92,9 +92,9 @@ resource "cloudflare_dns_record" "web" {
   proxied = false
 
   lifecycle {
-    # The cutover pull request sets this false, with WEB_PREVENT_DESTROY in
-    # scripts/check_infra.py, and the next pull request sets both back.
-    prevent_destroy = false
+    # A rollback pull request sets this and WEB_PREVENT_DESTROY in scripts/check_infra.py
+    # to false. The re-lock pull request after it sets both back to true.
+    prevent_destroy = true
 
     precondition {
       condition     = var.cloudflare_zone_id != ""

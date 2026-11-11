@@ -196,8 +196,8 @@ All are DNS only. They are two resources, not one, because `prevent_destroy` cov
 resource: the cutover has to unlock the web records without unlocking mail.
 
 A web record may be written before it exists, with `id = null`: its import is skipped and
-the apply creates it. The cutover uses this for the apex's AAAA records, and the pull request
-after it writes their ids in. Mail records always have an id.
+the apply creates it. The cutover did this for the apex's AAAA records, and their ids are now
+written in, so a fresh state adopts them. Mail records always have an id.
 
 They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
 so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
@@ -230,7 +230,7 @@ The guards:
   - Mail: never lifted. `scripts/check_infra.py` requires `prevent_destroy = true` on
     `cloudflare_dns_record.mail` and has no setting that allows anything else. Deleting a
     mail record means changing that rule, in review.
-  - Web: lifted only for the cutover, by one pull request that changes exactly two lines,
+  - Web: lifted only for a rollback, by one pull request that changes exactly two lines,
     `prevent_destroy = true` to `false` on `cloudflare_dns_record.web` in `dns.tf`, and
     `WEB_PREVENT_DESTROY = "true"` to `"false"` in `scripts/check_infra.py`. Either line alone
     fails the check. A later pull request sets both back (`docs/design/cutover-runbook.md`
