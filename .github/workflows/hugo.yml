@@ -2,7 +2,7 @@ name: Build and deploy
 
 # Builds and checks the site on every pull request, and on merge to main deploys it to
 # Cloud Run, blue-green (docs/design/site-move.md). The deploy job skips itself until the
-# infrastructure exists and the repository variables are set (infra/README.md).
+# WIF_PROVIDER repository variable is set (infra/README.md).
 #
 # Pushes rebuild the site, and this monthly run covers the months without one, so
 # security.txt's Expires date (180 days out) doesn't lapse. But GitHub pauses schedules

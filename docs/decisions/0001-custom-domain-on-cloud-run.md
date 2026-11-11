@@ -117,7 +117,7 @@ secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.
 that cap the grade for TLS 1.0 and 1.1 will report it.
 
 **To revisit.** Revisit by 2027-02-10 (three months). This review was once due before
-GitHub Pages was switched off. Pages is now retired, so nothing waits on this review. The
+GitHub Pages was switched off. Pages no longer serves the site, so nothing waits on this review. The
 date is a reminder to look at the question again.
 The TLS question is not closed.
 

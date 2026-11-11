@@ -80,8 +80,8 @@ Cross-Origin-Resource-Policy = "same-origin"
 # short. Five minutes keeps a deploy visible quickly without a request per page view.
 Cache-Control = "public, max-age=300"
 
-# The RSS feeds and the sitemap. The server's default for .xml is text/xml. Feed readers and
-# crawlers have fetched these as application/xml for years, so keep that type.
+# The RSS feeds and the sitemap. The server's default for .xml is text/xml. Serve them as
+# application/xml, the type registered for XML documents.
 [[advanced.headers]]
 source = "**/*.xml"
 headers.Content-Type = "application/xml"

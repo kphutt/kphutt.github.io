@@ -13,7 +13,7 @@
 # records that point there are in dns.tf, and only dns.tf may change them. Google issues and
 # renews each name's certificate only while its DNS points here.
 #
-# Each mapping checks that Google asks for exactly the records in its fixed list below.
+# A postcondition on each mapping checks that Google asks for exactly the records in its fixed list below.
 # dns.tf holds those same values, and tests/dns.tftest.hcl checks that the two match.
 
 locals {
@@ -109,7 +109,7 @@ resource "google_site_verification_web_resource" "apex" {
 }
 
 # 3. The mappings. DNS points at them, so deleting one takes that name off the internet.
-#    Neither can be deleted without a reviewed change to its lifecycle.
+#    Neither can be deleted through OpenTofu without a reviewed change to its lifecycle.
 resource "google_cloud_run_domain_mapping" "apex" {
   location = var.region
   name     = local.zone_name

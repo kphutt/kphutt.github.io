@@ -1,7 +1,8 @@
 # Moving the site from GitHub Pages to Cloud Run
 
-Status: done. The site is served from Cloud Run and GitHub Pages is retired. The text below is
-the plan as it was written, kept as the record of why and how.
+Status: the move is done, and the site is served from Cloud Run. GitHub Pages is still on in
+the repository settings until its owner turns it off. The text below is the plan, with notes
+where it has since been done.
 
 ## Why
 

@@ -71,8 +71,8 @@ in and creating the Cloudflare token.
    (The first deploy would create the environment anyway, without that limit; the Google
    side refuses anything but `main` either way.)
 6. `mise exec -- python infra/seed.py vars --apply` sets the six repository variables the
-   deploy workflow reads. Until they exist, the Cloud Run deploy job skips itself, and the
-   workflow still builds and checks the site.
+   deploy workflow reads. The Cloud Run deploy job skips itself until `WIF_PROVIDER` is set,
+   and the workflow still builds and checks the site.
 
 ## The test name (`next.kphutt.com`)
 

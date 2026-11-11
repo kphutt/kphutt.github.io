@@ -65,18 +65,20 @@ in CI.
   and is then promoted by exact name. If the smoke test fails, the old revision keeps serving.
   `rollback.yml` points traffic back at an earlier revision.
 - The deploy is keyless. GitHub's OIDC token is exchanged for a short-lived Google identity
-  (Workload Identity Federation). No service account key exists. Only the `cloud-run`
+  (Workload Identity Federation). No service account key is created. Only the `cloud-run`
   environment on `main` can use it (`infra/identities.tf`).
-- `kphutt.com` and `www` are Cloud Run domain mappings (`infra/site-domain.tf`), DNS only.
+- `kphutt.com` and `www` are Cloud Run domain mappings (`infra/site-domain.tf`), and their
+  Cloudflare records are DNS only.
   Google issues and renews the certificate. `www` redirects to the apex in one 301, and plain
   `http://` redirects to HTTPS.
 - DNS is hosted at Cloudflare and is code. The site and mail records are in `infra/dns.tf`,
   and the rest sit beside the mappings that need them. Change a record in its file, then plan
-  and apply (`infra/README.md`). A change in the
-  Cloudflare dashboard is put back by the next plan and apply.
+  and apply (`infra/README.md`). A change made in the Cloudflare dashboard is overwritten by
+  the next plan and apply.
 - Alerts, not dashboards: an uptime check and a certificate-expiry check email when the site
   is down or a certificate is running out (`infra/uptime.tf`). A billing budget takes the site
-  offline at a spending limit (`infra/cost-cutoff/`).
+  offline soon after spending passes a limit (`infra/cost-cutoff/`). Google reports costs
+  hours late, so spending can pass the limit first.
 - `baseURL` in `hugo.toml` decides every absolute URL in the build. The workflow deliberately
   does not pass `--baseURL`; the comment there explains why.
 
@@ -89,7 +91,7 @@ Do not plan on GitHub Pages as a fallback. Pages cannot send the security header
 
 ### Do not turn the DNS proxy on
 Turning on Cloudflare's DNS proxy was evaluated and rejected, first for GitHub Pages and
-again for Cloud Run. The record is here so it does not get re-proposed.
+again for Cloud Run. It is recorded here so nobody proposes it again.
 
 Google issues and renews the certificate for a mapped name by checking, over plain HTTP on
 port 80, that the name's DNS points at Google. Putting a reverse proxy in front of the
@@ -114,14 +116,14 @@ Content-Security-Policy (with `frame-ancestors 'none'`), Strict-Transport-Securi
 years, no `includeSubDomains`, no `preload`), X-Content-Type-Options, Referrer-Policy,
 Permissions-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy. The policy is
 `script-src 'none'` with no hashes and no `'unsafe-inline'`, because the site has no inline
-code: `layouts/partials/head.html` and `footer.html` are copies of the theme's with its inline
-scripts and style removed.
+code: `layouts/partials/head.html` and `footer.html` are copies of the theme's files, with
+the theme's inline scripts and style removed.
 
 `scripts/check_build.py` is the gate. It fails the build if inline code comes back, or if the
 header policy in `server/sws.toml` is weaker than its floor on any directive. It also fails if a
 required header goes missing or the page loads anything from another origin. And it fails if
-the theme changes a file those copies were made from. `scripts/smoke.py` checks a running server sends
-exactly those headers.
+the theme changes a file those copies were made from. `scripts/smoke.py` checks that a
+running server sends exactly those headers.
 
 The page carries no Content-Security-Policy meta tag. The header is the only policy, so there
 is one copy to keep right. It also covers what a meta tag cannot: `frame-ancestors`, and every
