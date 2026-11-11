@@ -171,16 +171,15 @@ Four guards protect it and the two mappings:
 
 - A precondition limits its name to one label of letters, digits and hyphens directly under
   kphutt.com, never `www` or the test name `next`.
-- A precondition pins the record to the token Google gave when this was set up. Google gives
-  each account its own token, so the pin is in `apex_verification_expected`.
-- `scripts/check_infra.py` refuses the record outside `site-domain.tf`, and requires the
-  Site Verification resource and both mappings in it. It also requires both preconditions.
+- A precondition pins the record to the code Google gave the account that set this up: its
+  label and target, in `apex_verification_expected`. Another account gets a different code,
+  so its plan stops with an error instead of rewriting the record.
+- `scripts/check_infra.py` refuses the record outside `site-domain.tf`, and requires both
+  preconditions, the Site Verification resource and both mappings there.
 - `prevent_destroy` stops OpenTofu from deleting the record or either mapping.
 
-A change of account used to slip past all of these. The record holds a code from the Google
-account that runs OpenTofu, and another account's plan swaps in its own code. That removes
-your proof. Now such a plan stops with an error. Run OpenTofu as the account that set this
-up, and change the pin only in a reviewed change.
+Run OpenTofu as the account that set this up. Change the pin only in a reviewed pull
+request, such as one that moves ownership to another account.
 
 ## Production DNS (`dns.tf`)
 
