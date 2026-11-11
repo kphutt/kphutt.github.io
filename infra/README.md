@@ -192,9 +192,9 @@ resources:
 - `cloudflare_dns_record.mail` (list `local.mail_records`): seven MX, and the SPF, DKIM and
   DMARC TXT records.
 - `cloudflare_dns_record.services` (list `local.service_records`): `lodestar.kphutt.com`, a
-  CNAME to `ghs.googlehosted.com` for the lodestar service, which another project runs. Its
-  domain mapping and certificate are in the lodestar project, and the guards below allow only
-  such CNAMEs, one label under the zone.
+  CNAME to `ghs.googlehosted.com` for the lodestar service, which runs in its own Google
+  Cloud project. Its domain mapping and certificate are managed there. The guards below
+  allow this list only CNAMEs to Google's mapping host, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
 resource: the cutover has to unlock the web records without unlocking mail or the services.
