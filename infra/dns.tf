@@ -41,10 +41,10 @@ locals {
     "apex-a-109"   = { id = "fa6a0db99be0d3e74bd79e7b5d88b9c5", name = "kphutt.com", type = "A", content = "216.239.34.21", priority = null }
     "apex-a-110"   = { id = "3047fb9505626052d92b6137b5bb8e96", name = "kphutt.com", type = "A", content = "216.239.36.21", priority = null }
     "apex-a-111"   = { id = "cf17f747d6448bf119074e194a5992ec", name = "kphutt.com", type = "A", content = "216.239.38.21", priority = null }
-    "apex-aaaa-32" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:32::15", priority = null }
-    "apex-aaaa-34" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:34::15", priority = null }
-    "apex-aaaa-36" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:36::15", priority = null }
-    "apex-aaaa-38" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:38::15", priority = null }
+    "apex-aaaa-32" = { id = "c4a6733117dcc00bf07c8215d804d7db", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:32::15", priority = null }
+    "apex-aaaa-34" = { id = "6bfa19e5ac014736d66ab63497a85152", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:34::15", priority = null }
+    "apex-aaaa-36" = { id = "42ccef79bcd652b053ba3c6161059790", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:36::15", priority = null }
+    "apex-aaaa-38" = { id = "4a0cfcfbe87b0fba2852ea1ef3f30f5b", name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:38::15", priority = null }
     "www"          = { id = "3bd7a0279c94812f42f2b49583660110", name = "www.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
