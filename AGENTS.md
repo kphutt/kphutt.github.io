@@ -85,8 +85,8 @@ in CI.
 The built URLs stay correct whatever answers at the edge, because they come from `baseURL`
 rather than from the request.
 
-Do not plan on GitHub Pages as a fallback. Pages cannot send the security headers in
-`server/sws.toml`, so the site would lose all of them. The rollback in
+Do not plan on GitHub Pages as a fallback. Pages cannot set custom response headers, so the
+site would lose the ones in `server/sws.toml`. The rollback in
 `docs/design/cutover-runbook.md` brings Pages back, and it is for an emergency only.
 
 ### Do not turn the DNS proxy on

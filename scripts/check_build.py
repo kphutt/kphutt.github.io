@@ -77,7 +77,7 @@ POLICY_FLOOR = {
 REQUIRED_DIRECTIVES = ("default-src", "script-src", "base-uri", "form-action")
 
 # The response headers the server sends, from its config. These are what a browser
-# enforces. They are the only CSP: the pages carry no in-page copy.
+# enforces. The header is the only CSP: the pages carry no in-page copy.
 SERVER_CONFIG = Path(__file__).resolve().parent.parent / "server" / "sws.toml"
 
 # Headers the catch-all rule must set, and the values each may take.

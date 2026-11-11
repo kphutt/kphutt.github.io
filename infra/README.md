@@ -148,7 +148,7 @@ re-checks ownership from time to time and drops it once the CNAME is gone.
 The mappings that serve `kphutt.com` and `www.kphutt.com` from Cloud Run, and the proof
 that the account running OpenTofu owns `kphutt.com`. Always on. A mapping serves a name only
 while that name's DNS points at Google. The apex and `www` records that point there are in
-`dns.tf`, so creating or changing a mapping never moves traffic by itself.
+`dns.tf`, so creating a mapping moves no traffic until its records point at Google.
 
 The apply:
 
@@ -200,8 +200,8 @@ All are DNS only. They are separate resources, not one, because `prevent_destroy
 resource: a rollback has to unlock the web records without unlocking mail or the services.
 
 A web record may be written before it exists, with `id = null`: its import is skipped and
-the apply creates it. The apex's AAAA records were added that way. Their ids are now written
-in, so a fresh state adopts them. Mail records always have an id.
+the apply creates it. The apex's AAAA records were added that way. Their Cloudflare ids are now
+in `dns.tf`, so on a fresh state the import blocks adopt them. Mail records always have an id.
 
 They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
 so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
