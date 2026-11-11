@@ -220,14 +220,14 @@ TEST_NAME = "next.kphutt.com"
 # to "false" first (docs/design/cutover-runbook.md).
 # The mail records need no such constant: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
-# The three production resources: the list each one runs over, the record types that list may
-# hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
-# an entry may be a record that does not exist yet (id = null, so its import is skipped and
-# the apply creates it). The web and services lists may hold a record that doesn't exist yet
-# (id = null), because Cloudflare gives a record its id only when the apply creates it. A
-# later pull request writes that id in. Every mail record already exists, so the mail list
-# may not. A rule may also carry "name_ok" and "value_ok",
-# checks on the name and the content of every entry.
+# The three production resources: the list each one runs over, the record types that list
+# may hold, the names it may hold (None: any name in the zone), its prevent_destroy, and
+# whether an entry may be a record that does not exist yet (id = null, so its import is
+# skipped and the apply creates it). The web and services lists may hold a record that
+# doesn't exist yet (id = null), because Cloudflare gives a record its id only when the
+# apply creates it. A later pull request writes that id in. Every mail record already
+# exists, so the mail list may not. A rule may also carry "name_ok" and "value_ok", checks
+# on the name and the content of every entry.
 #
 # Names a service record may never take: the live site, the test name, and anything that is
 # not a plain one-label host (so no underscore names such as _dmarc, no deeper names).

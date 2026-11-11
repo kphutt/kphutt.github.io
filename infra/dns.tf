@@ -28,9 +28,9 @@
 
 locals {
   # One line per record. id is Cloudflare's record id, used only to import; in the web and
-  # services lists only, it may be null for a record the next apply creates. ttl 1 means "automatic" at
-  # Cloudflare. priority is set for MX records only. TXT values keep the quotes Cloudflare
-  # stores them with.
+  # services lists only, it may be null for a record the next apply creates. ttl 1 means
+  # "automatic" at Cloudflare. priority is set for MX records only. TXT values keep the
+  # quotes Cloudflare stores them with.
 
   # The live site: the apex and www. Only A, AAAA and CNAME records, named kphutt.com or
   # www.kphutt.com.
