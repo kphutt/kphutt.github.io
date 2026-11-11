@@ -157,7 +157,7 @@ resource "google_monitoring_alert_policy" "cert_expiring" {
     mime_type = "text/markdown"
     subject   = "TLS certificate expiring: $${resource.label.host}"
     content   = <<-EOT
-      What it means: the certificate for the host named above has fewer than ${var.uptime_cert_expiry_days} days left. GitHub Pages and Google renew their managed certificates long before that, so a renewal has failed. When it expires, browsers will refuse the site.
+      What it means: the certificate for the host named above has fewer than ${var.uptime_cert_expiry_days} days left. GitHub Pages and Google renew their managed certificates long before that, so a renewal has failed. When it expires, browsers will refuse the site. If the host redirects (www), this alert measures the certificate of the host it redirects to (kphutt.com), so check that one first. This alert does not cover www's own certificate.
 
       What to do:
       1. If GitHub Pages serves the name (DNS points at 185.199.108-111.153 or kphutt.github.io): check the Cloudflare records are DNS-only (not proxied) and the Pages custom-domain and HTTPS status. See AGENTS.md, "Do not turn the DNS proxy on".
