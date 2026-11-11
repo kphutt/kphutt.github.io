@@ -34,8 +34,8 @@ locals {
   # Cloud Run, by domain mapping: exactly the records the mappings in site-domain.tf ask for
   # (tests/dns.tftest.hcl checks they match). The four A records and www are the records
   # that pointed at GitHub Pages, changed in place, so they keep their ids and their keys
-  # (named for the Pages addresses they held at import). The AAAA records are new: id null
-  # until the pull request after the cutover writes in the ids Cloudflare gave them.
+  # (named for the Pages addresses they held at import). The cutover created the AAAA
+  # records. Their ids are written in, so a fresh state adopts them instead of making copies.
   web_records = {
     "apex-a-108"   = { id = "55afe9d65f67573aabad45aa75d90068", name = "kphutt.com", type = "A", content = "216.239.32.21", priority = null }
     "apex-a-109"   = { id = "fa6a0db99be0d3e74bd79e7b5d88b9c5", name = "kphutt.com", type = "A", content = "216.239.34.21", priority = null }
