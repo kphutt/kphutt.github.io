@@ -93,7 +93,7 @@ resource "cloudflare_dns_record" "web" {
 
   lifecycle {
     # A rollback pull request sets this false, with WEB_PREVENT_DESTROY in
-    # scripts/check_infra.py, and the pull request after it sets both back.
+    # scripts/check_infra.py, and the re-lock pull request after it sets both back.
     prevent_destroy = true
 
     precondition {
