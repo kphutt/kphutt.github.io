@@ -2,9 +2,8 @@
 # and email (MX, SPF, DKIM, DMARC). The only file that may manage the apex or www.
 #
 # These records existed before OpenTofu did. The import blocks below adopted them as they
-# were, so the first plan imported them and changed nothing. Every value here is the value
-# Cloudflare held at import time, written out in full, so any change to a record is a line
-# in this file and a diff in review. tests/dns.tftest.hcl repeats the values, so a change has
+# were, so the first plan imported them and changed nothing. Every value is written out in
+# full, so any change to a record is a line in this file and a diff in review. tests/dns.tftest.hcl repeats the values, so a change has
 # to be made in both places, on purpose.
 #
 # Two resources, each with its own list, import block and lifecycle, because prevent_destroy
@@ -31,12 +30,22 @@ locals {
 
   # The live site: the apex and www. Only A, AAAA and CNAME records, named kphutt.com or
   # www.kphutt.com.
+  #
+  # Cloud Run, by domain mapping: exactly the records the mappings in site-domain.tf ask for
+  # (tests/dns.tftest.hcl checks they match). The four A records and www are the records
+  # that pointed at GitHub Pages, changed in place, so they keep their ids and their keys
+  # (named for the Pages addresses they held at import). The AAAA records are new: id null
+  # until the pull request after the cutover writes in the ids Cloudflare gave them.
   web_records = {
-    "apex-a-108" = { id = "55afe9d65f67573aabad45aa75d90068", name = "kphutt.com", type = "A", content = "185.199.108.153", priority = null }
-    "apex-a-109" = { id = "fa6a0db99be0d3e74bd79e7b5d88b9c5", name = "kphutt.com", type = "A", content = "185.199.109.153", priority = null }
-    "apex-a-110" = { id = "3047fb9505626052d92b6137b5bb8e96", name = "kphutt.com", type = "A", content = "185.199.110.153", priority = null }
-    "apex-a-111" = { id = "cf17f747d6448bf119074e194a5992ec", name = "kphutt.com", type = "A", content = "185.199.111.153", priority = null }
-    "www"        = { id = "3bd7a0279c94812f42f2b49583660110", name = "www.kphutt.com", type = "CNAME", content = "kphutt.github.io", priority = null }
+    "apex-a-108"   = { id = "55afe9d65f67573aabad45aa75d90068", name = "kphutt.com", type = "A", content = "216.239.32.21", priority = null }
+    "apex-a-109"   = { id = "fa6a0db99be0d3e74bd79e7b5d88b9c5", name = "kphutt.com", type = "A", content = "216.239.34.21", priority = null }
+    "apex-a-110"   = { id = "3047fb9505626052d92b6137b5bb8e96", name = "kphutt.com", type = "A", content = "216.239.36.21", priority = null }
+    "apex-a-111"   = { id = "cf17f747d6448bf119074e194a5992ec", name = "kphutt.com", type = "A", content = "216.239.38.21", priority = null }
+    "apex-aaaa-32" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:32::15", priority = null }
+    "apex-aaaa-34" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:34::15", priority = null }
+    "apex-aaaa-36" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:36::15", priority = null }
+    "apex-aaaa-38" = { id = null, name = "kphutt.com", type = "AAAA", content = "2001:4860:4802:38::15", priority = null }
+    "www"          = { id = "3bd7a0279c94812f42f2b49583660110", name = "www.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
   # Email. Only MX and TXT records.
@@ -85,7 +94,7 @@ resource "cloudflare_dns_record" "web" {
   lifecycle {
     # The cutover pull request sets this false, with WEB_PREVENT_DESTROY in
     # scripts/check_infra.py, and the next pull request sets both back.
-    prevent_destroy = true
+    prevent_destroy = false
 
     precondition {
       condition     = var.cloudflare_zone_id != ""

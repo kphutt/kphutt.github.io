@@ -185,9 +185,10 @@ this record.
 Every record in the kphutt.com zone, except the test name's, is in `dns.tf`, as two
 resources:
 
-- `cloudflare_dns_record.web` (list `local.web_records`): the four apex A records and the
-  `www` CNAME that serve the live site (GitHub Pages, until the cutover). These are the
-  records the cutover replaces.
+- `cloudflare_dns_record.web` (list `local.web_records`): the apex's four A and four AAAA
+  records and the `www` CNAME that serve the live site, pointing at the Cloud Run mappings
+  in `site-domain.tf` (they pointed at GitHub Pages until the cutover). These are the
+  records the cutover changed.
 - `cloudflare_dns_record.mail` (list `local.mail_records`): seven MX, and the SPF, DKIM and
   DMARC TXT records.
 

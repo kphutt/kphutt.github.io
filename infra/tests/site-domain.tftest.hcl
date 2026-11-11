@@ -114,17 +114,6 @@ run "proves_kphutt_com_and_maps_both_names_without_moving_traffic" {
     condition     = google_cloud_run_domain_mapping.apex.location == "us-west1" && google_cloud_run_domain_mapping.apex.metadata[0].namespace == "test-site-project" && google_cloud_run_domain_mapping.www.metadata[0].namespace == "test-site-project"
     error_message = "The mappings are in the site's project and region."
   }
-  # Creating the mappings moves no traffic: the apex and www still point at GitHub Pages.
-  assert {
-    condition = toset([for r in values(cloudflare_dns_record.web) : "${r.name} ${r.type} ${r.content}"]) == toset([
-      "kphutt.com A 185.199.108.153",
-      "kphutt.com A 185.199.109.153",
-      "kphutt.com A 185.199.110.153",
-      "kphutt.com A 185.199.111.153",
-      "www.kphutt.com CNAME kphutt.github.io",
-    ])
-    error_message = "This file must not change where kphutt.com or www points."
-  }
   assert {
     condition     = length(cloudflare_dns_record.test) == 0 && length(google_cloud_run_domain_mapping.test) == 0
     error_message = "The live names add nothing for the test name."

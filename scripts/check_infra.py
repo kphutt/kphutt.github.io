@@ -218,7 +218,7 @@ TEST_NAME = "next.kphutt.com"
 # prevent_destroy = false on cloudflare_dns_record.web in dns.tf, and the pull request after
 # the apply sets both back to "true" (docs/design/cutover-runbook.md). Two lines, both in
 # review. The mail records have no such setting: their prevent_destroy is always "true".
-WEB_PREVENT_DESTROY = "true"
+WEB_PREVENT_DESTROY = "false"
 # The two production resources: the list each one runs over, the record types that list may
 # hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
 # an entry may be a record that does not exist yet (id = null, so its import is skipped and
