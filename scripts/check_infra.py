@@ -231,7 +231,7 @@ WEB_PREVENT_DESTROY = "true"
 #
 # Names a service record may never take: the live site, the test name, and anything that is
 # not a plain one-label host (so no underscore names such as _dmarc, no deeper names).
-SERVICE_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?[.]" + re.escape(ZONE) + "$")
+SERVICE_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.]" + re.escape(ZONE) + "$")
 SERVICE_NAME_REFUSED = {ZONE, "www." + ZONE, TEST_NAME}
 PRODUCTION = {
     "web": {"list": "web_records", "types": {"A", "AAAA", "CNAME"},

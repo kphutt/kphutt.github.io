@@ -182,8 +182,8 @@ this record.
 
 ## Production DNS (`dns.tf`)
 
-Every record in the kphutt.com zone, except the test name's, is in `dns.tf`, as three
-resources:
+Every record in the kphutt.com zone, except the test name's and kphutt.com's ownership record
+(`site-domain.tf`), is in `dns.tf`, as three resources:
 
 - `cloudflare_dns_record.web` (list `local.web_records`): the apex's four A and four AAAA
   records and the `www` CNAME that serve the live site, pointing at the Cloud Run mappings

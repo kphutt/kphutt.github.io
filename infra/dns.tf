@@ -27,8 +27,8 @@
 # prevent_destroy refuses any plan that would delete one.
 
 locals {
-  # One line per record. id is Cloudflare's record id, used only to import; in the web list
-  # only, it may be null for a record the next apply creates. ttl 1 means "automatic" at
+  # One line per record. id is Cloudflare's record id, used only to import; in the web and
+  # services lists only, it may be null for a record the next apply creates. ttl 1 means "automatic" at
   # Cloudflare. priority is set for MX records only. TXT values keep the quotes Cloudflare
   # stores them with.
 
