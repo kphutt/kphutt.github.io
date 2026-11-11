@@ -223,9 +223,10 @@ WEB_PREVENT_DESTROY = "true"
 # The three production resources: the list each one runs over, the record types that list may
 # hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
 # an entry may be a record that does not exist yet (id = null, so its import is skipped and
-# the apply creates it). The web and services lists may, because a new record has no
-# Cloudflare id until the apply creates it. A later pull request writes the id in. Every mail
-# record exists and is adopted. A rule may also carry "name_ok" and "value_ok",
+# the apply creates it). The web and services lists may hold a record that doesn't exist yet
+# (id = null), because Cloudflare gives a record its id only when the apply creates it. A
+# later pull request writes that id in. Every mail record already exists, so the mail list
+# may not. A rule may also carry "name_ok" and "value_ok",
 # checks on the name and the content of every entry.
 #
 # Names a service record may never take: the live site, the test name, and anything that is
