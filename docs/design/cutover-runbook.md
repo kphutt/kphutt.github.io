@@ -226,9 +226,9 @@ its last deploy, so a rollback needs only steps 3 to 5. Once Pages is turned off
 has to bring it back before the records move. Otherwise the records send visitors to a Pages
 site that no longer exists.
 
-1. Turn Pages back on in the repository settings, with GitHub Actions as the source and
-   `kphutt.com` as the custom domain. A deploy to Pages fails while Pages is off, so this
-   comes first.
+1. In the repository's Pages settings, add `kphutt.com` back as the custom domain, and check
+   that the source is still GitHub Actions. Unpublishing keeps the other settings, and the
+   next Pages deploy publishes the site again.
 2. Revert the pull request that retired Pages ("Retiring Pages", below). That restores the
    Pages deploy job in `hugo.yml` and `static/CNAME`. Merge it, and wait for its Pages
    deploy to finish.
