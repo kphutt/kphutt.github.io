@@ -9,9 +9,9 @@
 # Two resources, each with its own list, import block and lifecycle, because prevent_destroy
 # covers a whole resource:
 #
-#   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). The cutover
-#     changed them in place. A rollback deletes the four AAAA records, so it lifts prevent_destroy
-#     in a pull request, together with the matching line in scripts/check_infra.py.
+#   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). Its
+#     prevent_destroy stays on. A rollback deletes the four AAAA records, so a rollback pull
+#     request lifts it, together with the matching line in scripts/check_infra.py.
 #   - cloudflare_dns_record.mail: MX, SPF, DKIM and DMARC. Its prevent_destroy never comes off;
 #     scripts/check_infra.py has no setting that allows it.
 #
@@ -34,8 +34,8 @@ locals {
   # Cloud Run, by domain mapping: exactly the records the mappings in site-domain.tf ask for
   # (tests/dns.tftest.hcl checks they match). The four A records and www are the records
   # that pointed at GitHub Pages, changed in place, so they keep their ids and their keys
-  # (named for the Pages addresses they held at import). The cutover created the AAAA
-  # records. Their ids are written in, so a fresh state adopts them instead of making copies.
+  # (named for the Pages addresses they held at import). The AAAA ids are written in too, so
+  # a fresh state adopts the existing records instead of making copies.
   web_records = {
     "apex-a-108"   = { id = "55afe9d65f67573aabad45aa75d90068", name = "kphutt.com", type = "A", content = "216.239.32.21", priority = null }
     "apex-a-109"   = { id = "fa6a0db99be0d3e74bd79e7b5d88b9c5", name = "kphutt.com", type = "A", content = "216.239.34.21", priority = null }
@@ -92,8 +92,8 @@ resource "cloudflare_dns_record" "web" {
   proxied = false
 
   lifecycle {
-    # A rollback sets this false, with WEB_PREVENT_DESTROY in scripts/check_infra.py,
-    # and the pull request after it sets both back.
+    # A rollback pull request sets this false, with WEB_PREVENT_DESTROY in
+    # scripts/check_infra.py, and the pull request after it sets both back.
     prevent_destroy = true
 
     precondition {
