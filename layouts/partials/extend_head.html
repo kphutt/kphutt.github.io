@@ -3,10 +3,10 @@
   every page's <head> without forking the theme's template.
 
   Referrer-Policy, delivered in HTML as well as in the response header (server/sws.toml).
-  This is a standard mechanism from the Referrer Policy spec -- note it is name="referrer",
-  not http-equiv, and not spelled the same as the HTTP header. The header is the one that
-  matters; this copy only keeps the policy when a page is saved or mirrored without its
-  headers, and it can never disagree with the header because it only restricts.
+  This is a standard mechanism from the Referrer Policy spec. Note that it is
+  name="referrer", not http-equiv, and not spelled the same as the HTTP header. The header
+  is the one that matters. This copy only keeps the policy when a page is saved or mirrored without its
+  headers. Keep its value the same as the header's.
 
   strict-origin-when-cross-origin: send the full URL within this site, send only the
   origin to other sites, send nothing when going from HTTPS to HTTP.
@@ -14,7 +14,8 @@
   There is deliberately no Content-Security-Policy meta tag here. The policy is a response
   header in server/sws.toml, which also covers frame-ancestors and every non-HTML response,
   and scripts/check_build.py holds it to a floor. A second copy in the page would have to be
-  kept identical by hand, and a policy in both places applies as the intersection of the two.
+  kept identical to it, with nothing to check that. A policy in both places applies as the
+  intersection of the two.
 */ -}}
 <meta name="referrer" content="strict-origin-when-cross-origin">
 {{- /*

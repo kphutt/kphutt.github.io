@@ -8,12 +8,12 @@ Personal website for Karsten Huttelmaier. Hugo static site, served from Cloud Ru
 - Homepage: `content/_index.md` (custom layout renders as content page, not post list)
 - Posts: `content/posts/` (individual markdown files, rendered as post list)
 - Deployment: GitHub Actions on push to main builds and checks the site, then deploys it
-  to Cloud Run (`docs/design/site-move.md`; the move from GitHub Pages is done):
+  to Cloud Run (`docs/design/site-move.md`):
   - `server/sws.toml`: the static-web-server config, which holds every response header.
     It is a security policy; `scripts/check_build.py` fails the build if it weakens.
   - `Dockerfile`: the server image plus the checked build. Hugo does not run in it.
-  - `infra/`: the Google Cloud resources and the DNS records (OpenTofu). They are applied by
-    hand; CI only deploys images. See `infra/README.md`.
+  - `infra/`: the Google Cloud resources and the DNS records (OpenTofu). An owner applies
+    them after review, and CI only deploys images. See `infra/README.md`.
   - `scripts/smoke.py`: run against a container or a Cloud Run candidate before it gets
     traffic.
 
@@ -61,18 +61,19 @@ in CI.
 ## Deployment, DNS and TLS
 - GitHub Actions (`.github/workflows/hugo.yml`) builds on push to main and runs
   `scripts/check_build.py`. It then builds the container, smoke-tests it, and deploys it to
-  Cloud Run blue-green: a new revision at 0% traffic, smoke-tested at its own URL, then
-  promoted by exact name. If the smoke test fails, the old revision keeps serving.
+  Cloud Run blue-green. A new revision starts at 0% traffic, is smoke-tested at its own URL,
+  and is then promoted by exact name. If the smoke test fails, the old revision keeps serving.
   `rollback.yml` points traffic back at an earlier revision.
 - The deploy is keyless. GitHub's OIDC token is exchanged for a short-lived Google identity
-  (Workload Identity Federation); no service account key exists. Only the `cloud-run`
+  (Workload Identity Federation). No service account key exists. Only the `cloud-run`
   environment on `main` can use it (`infra/identities.tf`).
 - `kphutt.com` and `www` are Cloud Run domain mappings (`infra/site-domain.tf`), DNS only.
   Google issues and renews the certificate. `www` redirects to the apex in one 301, and plain
   `http://` redirects to HTTPS.
-- DNS is hosted at Cloudflare and is code: every record in the zone, including mail, is in
-  `infra/dns.tf`. Change records there, plan, apply (`infra/README.md`). A change in the
-  Cloudflare dashboard is put back by the next plan.
+- DNS is hosted at Cloudflare and is code. The site and mail records are in `infra/dns.tf`,
+  and the rest sit beside the mappings that need them. Change a record in its file, then plan
+  and apply (`infra/README.md`). A change in the
+  Cloudflare dashboard is put back by the next plan and apply.
 - Alerts, not dashboards: an uptime check and a certificate-expiry check email when the site
   is down or a certificate is running out (`infra/uptime.tf`). A billing budget takes the site
   offline at a spending limit (`infra/cost-cutoff/`).
@@ -82,12 +83,13 @@ in CI.
 The built URLs stay correct whatever answers at the edge, because they come from `baseURL`
 rather than from the request.
 
-GitHub Pages is not used any more. Do not re-enable it as a fallback: it needs the Pages DNS
-records back, and it cannot send the security headers this site relies on.
+Do not plan on GitHub Pages as a fallback. Pages cannot send the security headers in
+`server/sws.toml`, so the site would lose all of them. The rollback in
+`docs/design/cutover-runbook.md` brings Pages back, and it is for an emergency only.
 
 ### Do not turn the DNS proxy on
-This was evaluated and rejected, first for GitHub Pages and again for Cloud Run. The record
-is here so it does not get re-proposed.
+Turning on Cloudflare's DNS proxy was evaluated and rejected, first for GitHub Pages and
+again for Cloud Run. The record is here so it does not get re-proposed.
 
 Google issues and renews the certificate for a mapped name by checking, over plain HTTP on
 port 80, that the name's DNS points at Google. Putting a reverse proxy in front of the
@@ -95,15 +97,15 @@ mapping breaks that check. DNS then resolves to the proxy, and the request meant
 intercepted. Renewal fails quietly: the existing certificate is still valid, so nothing looks
 wrong for weeks. When it expires, an SSL mode of Full (strict) means the proxy validates the
 origin certificate, finds it expired, and refuses to connect at all. The site goes down, and
-recovery is to un-proxy by hand and wait for Google to reissue.
+recovery is to turn the proxy off and wait for Google to reissue.
 
-A fuse of weeks or months with a manual recovery step is the opposite of what this setup is for.
-`scripts/check_infra.py` refuses a proxied production record.
+A failure that hides for weeks and then needs a manual fix is the opposite of what this setup
+is for. `scripts/check_infra.py` refuses a proxied production record.
 
 Proxying would also take over the HTTPS redirect. Today `http://` reaches Google directly and
 is redirected there. Behind a proxy the origin leg is already HTTPS, so the origin never sees a
-plain-HTTP request; the proxy would serve the page over HTTP unless its own Always Use HTTPS
-were enabled to take over the job. It would also hide the visitor's address from the request
+plain-HTTP request. The proxy would then serve the page over HTTP, unless its own Always Use
+HTTPS setting took over the job. It would also hide the visitor's address from the request
 log.
 
 ### Security headers
@@ -115,18 +117,18 @@ Permissions-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy.
 code: `layouts/partials/head.html` and `footer.html` are copies of the theme's with its inline
 scripts and style removed.
 
-`scripts/check_build.py` is the gate. It fails the build if inline code comes back, if the
-header policy in `server/sws.toml` is weaker than its floor on any directive, if a required
-header goes missing, if the page loads anything from another origin, or if the theme changes a
-file those copies were made from. `scripts/smoke.py` checks a running server sends exactly
-those headers.
+`scripts/check_build.py` is the gate. It fails the build if inline code comes back, or if the
+header policy in `server/sws.toml` is weaker than its floor on any directive. It also fails if a
+required header goes missing or the page loads anything from another origin. And it fails if
+the theme changes a file those copies were made from. `scripts/smoke.py` checks a running server sends
+exactly those headers.
 
 The page carries no Content-Security-Policy meta tag. The header is the only policy, so there
-is one copy to keep right, and it covers what a meta tag cannot (`frame-ancestors`, and every
-response that is not HTML). `layouts/partials/extend_head.html` keeps only a
-`<meta name="referrer">` copy of the Referrer-Policy, which cannot disagree with the header.
-Do not add headers to the page with `http-equiv`: it does nothing except make the source look
-secure. Add or change a header in `server/sws.toml`.
+is one copy to keep right. It also covers what a meta tag cannot: `frame-ancestors`, and every
+response that is not HTML. `layouts/partials/extend_head.html` keeps only a
+`<meta name="referrer">` copy of the Referrer-Policy, with the same value as the header.
+Do not add security headers to the page with `http-equiv`. Most of them do nothing there, and a
+CSP copy would be a second policy to keep in step. Add or change a header in `server/sws.toml`.
 
 ### Other settled decisions
 - **Cloudflare's "Manage your robots.txt" stays off.** This repo generates `robots.txt` from

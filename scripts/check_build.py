@@ -77,7 +77,7 @@ POLICY_FLOOR = {
 REQUIRED_DIRECTIVES = ("default-src", "script-src", "base-uri", "form-action")
 
 # The response headers the server sends, from its config. These are what a browser
-# enforces. They are the only policy: the pages carry no in-page copy.
+# enforces. They are the only CSP: the pages carry no in-page copy.
 SERVER_CONFIG = Path(__file__).resolve().parent.parent / "server" / "sws.toml"
 
 # Headers the catch-all rule must set, and the values each may take.
@@ -243,7 +243,8 @@ def check_server_headers(failures: list) -> None:
     """The server config must send the full header set, with a policy at or above the floor.
 
     This is the policy the site is served with. It covers frame-ancestors and applies to
-    every response, including feeds, images and the 404 page. Loosening it fails the build.
+    every response, including feeds, images and the 404 page. Loosening it below the floor
+    fails the build.
     """
     name = SERVER_CONFIG.relative_to(SERVER_CONFIG.parent.parent).as_posix()
     try:
@@ -522,7 +523,7 @@ def main() -> int:
     check_inline_code(root, failures)
     check_no_outside_loads(root, base, failures)
 
-    # 7. The response headers the server will send hold the same floor, and more.
+    # 7. The server's CSP holds the floor, and every other required header is set.
     check_server_headers(failures)
 
     # 8. security.txt is present, well formed and unexpired.

@@ -1,4 +1,8 @@
-# Cutover runbook: kphutt.com from GitHub Pages to Cloud Run
+# Cutover runbook: how kphutt.com moved from GitHub Pages to Cloud Run
+
+Status: done. The switch was applied at 04:40 UTC on 2026-11-11, and Cloud Run serves
+`kphutt.com` and `www`. The steps below are the record of how. The rollback still applies,
+but it now has to bring Pages back first ("Rollback", below).
 
 Steps 4 and 5 of [the plan](site-move.md). Each step says how to undo it.
 
@@ -18,10 +22,10 @@ PROJECT=<project_id>   # from infra/terraform.tfvars
 REGION=<region>
 ```
 
-## The records as they are today
+## The GitHub Pages records, which a rollback restores
 
-Read from public DNS on 2026-11-08. All TTLs are already 300 seconds, so there is nothing
-to lower in advance: a change, or its undo, reaches resolvers within five minutes.
+These were the records before the switch, read from public DNS on 2026-11-08. All TTLs are
+300 seconds, so a change, or its undo, reaches resolvers within five minutes.
 
 | Name | Type | Value | Proxy |
 |---|---|---|---|
@@ -31,27 +35,27 @@ to lower in advance: a change, or its undo, reaches resolvers within five minute
 | `kphutt.com` | A | `185.199.111.153` | DNS only |
 | `www.kphutt.com` | CNAME | `kphutt.github.io` | DNS only |
 
-These four A records and the CNAME are GitHub Pages, and they are `local.web_records` in
-`infra/dns.tf` (resource `cloudflare_dns_record.web`). **Putting exactly these back is the
-rollback**, at any point: revert the change to `infra/dns.tf`, plan, apply. Do not touch the
+These four A records and the CNAME pointed at GitHub Pages. The same records, with the same
+Cloudflare ids, are now `local.web_records` in `infra/dns.tf` (resource
+`cloudflare_dns_record.web`), holding Google's addresses. **Putting exactly these values
+back is the DNS half of a rollback** ("Rollback", below). Do not touch the
 MX and TXT records (`local.mail_records`): they are for mail, and their `prevent_destroy`
 never comes off. (Cloudflare stores these TTLs as 1, "automatic", which it serves as 300.)
 
 ### Unlocking the web records
 
-Replacing a record deletes the old one, and `prevent_destroy` on `cloudflare_dns_record.web`
-refuses that. So the cutover pull request below also changes exactly these two lines, and
-nothing else about the guards:
+A rollback deletes the apex's four AAAA records, and `prevent_destroy` on
+`cloudflare_dns_record.web` refuses that. So a rollback pull request also changes exactly
+these two lines, and nothing else about the guards:
 
 - `infra/dns.tf`, in `resource "cloudflare_dns_record" "web"`: `prevent_destroy = true`
   becomes `prevent_destroy = false`.
 - `scripts/check_infra.py`: `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
 
 The check fails if only one of them changes, and it refuses `prevent_destroy = false` on
-`cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. They stay unlocked through
-the watch, so a rollback is a plain revert of the record lines; then a pull request sets both
-lines back to `true` (option A, pull request C; option D step 5). A rollback after that carries the
-same two-line unlock.
+`cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. The switch (pull request B,
+below) carried the same unlock, so a rollback in the days after it could be a plain revert. Pull request C (below)
+then set both lines back to `true`. After a rollback has settled, a pull request sets them back again.
 
 ## Step 4: prove it on `next.kphutt.com`
 
@@ -127,13 +131,16 @@ visitor sent to Google. How long:
 Expect about an hour, and plan for longer. Switch at a quiet time, and stay at the
 keyboard until the certificate is ready.
 
+Measured on `kphutt.com` itself, the switch was applied at 04:40 UTC on 2026-11-11. Both
+names answered over HTTPS with a valid certificate by 04:59, 19 minutes later.
+
 Nothing in the zone blocks issuance: there is no CAA record (Google's page says one would
 have to allow `pki.goog` and `letsencrypt.org`), the records are DNS only, so port 80
 reaches Google, and nothing proxies the validation request.
 
-Visitors whose resolvers still hold the old records keep reaching GitHub Pages for up to
-five minutes (TTL 300), and Pages serves them correctly: `static/CNAME` still names
-`kphutt.com`, and Pages still holds its certificate for `kphutt.com` and `www`.
+Visitors whose resolvers still held the old records kept reaching GitHub Pages for up to
+five minutes (TTL 300). Pages served them correctly, because `static/CNAME` still named
+`kphutt.com` and Pages still held its certificate for `kphutt.com` and `www`.
 
 ### Pull request A: prove ownership and create the mappings (no traffic moves)
 
@@ -198,44 +205,52 @@ replacement but a content change does not, so this plan deletes nothing.
    `ghs.googlehosted.com`). Any replacement, anything in `cloudflare_dns_record.mail` or
    `.test`, or any Google resource: stop.
 3. Apply. Note the time.
-4. Watch the certificates, every few minutes:
+4. Watch the certificates every few minutes by requesting both names.
+   `curl -sI https://kphutt.com/` must answer 200, and `curl -sI https://www.kphutt.com/`
+   must answer 301, both with no certificate error. The mapping status helps explain a
+   delay, but it does not say when the certificate is ready:
    ```bash
    gcloud beta run domain-mappings describe --domain kphutt.com --project "$PROJECT" --region "$REGION" --format="value(status.conditions)"
    gcloud beta run domain-mappings describe --domain www.kphutt.com --project "$PROJECT" --region "$REGION" --format="value(status.conditions)"
    ```
-   Done when `CertificateProvisioned` and `Ready` are true for both.
-   **If either is not done two hours after the apply, roll back** (below), then find out
-   why with the records back on Pages.
+   The status lags behind. On 2026-11-11 both names served a valid certificate 19 minutes
+   after the apply, while both mappings still said `CertificateProvisioned` Unknown. That
+   condition turned true 37 minutes after the apply. A watch that waits on the status alone
+   could roll back a site that already works.
+   **If either name is not served two hours after the apply, roll back** (below), then find
+   out why.
 5. Run the checks in "After the switch" below.
 
-**Rollback.** Put the switch commit's record lines back, and nothing else: the web records
-stay unlocked, because the rollback deletes the four AAAA records.
+**Rollback.** While Pages is still turned on in the repository settings, it keeps serving
+its last deploy, so a rollback needs only steps 3 to 5. Once Pages is turned off, a rollback
+has to bring it back before the records move. Otherwise the records send visitors to a Pages
+site that no longer exists.
+
+1. Turn Pages back on in the repository settings, with GitHub Actions as the source and
+   `kphutt.com` as the custom domain. A deploy to Pages fails while Pages is off, so this
+   comes first.
+2. Revert the pull request that retired Pages ("Retiring Pages", below). That restores the
+   Pages deploy job in `hugo.yml` and `static/CNAME`. Merge it, and wait for its Pages
+   deploy to finish.
+3. In `infra/dns.tf`, put `local.web_records` back to the table above. The four A records
+   and `www` take their old values in place, and the four AAAA lines are deleted. Add the
+   two-line unlock ("Unlocking the web records") in the same commit.
+4. Update `tests/dns.tftest.hcl` to match. Its test that the web records are what the
+   mappings ask for no longer holds, so delete it too. `python scripts/check_infra.py` must
+   pass.
+5. Open it as a `fix:` pull request, merge, plan, apply. **Expected plan:**
+   `0 to add, 5 to change, 4 to destroy`, all in `cloudflare_dns_record.web`. Anything else:
+   stop.
+
+The records take effect as resolvers drop the Google ones, within five minutes (TTL 300)
+for most visitors. HTTPS then depends on GitHub's certificate. On 2026-11-11, Pages still
+held one for `kphutt.com`, valid until 2027-02-01. Do not count on it once Pages is turned
+off in the settings. Expect GitHub to issue a new certificate only after the records point
+back, with HTTPS failing until it does. To see what Pages serves before switching, ask one
+of the addresses in the table above for `kphutt.com`:
 
 ```bash
-git switch -c fix/cutover-rollback origin/main
-git revert --no-commit <B's merge commit>
-git checkout origin/main -- scripts/check_infra.py   # keep WEB_PREVENT_DESTROY = "false"
-# in infra/dns.tf, put prevent_destroy = false back on cloudflare_dns_record.web
-python scripts/check_infra.py
-```
-
-Open it as a `fix:` pull request, merge, plan, apply. **Expected plan:**
-`0 to add, 5 to change, 4 to destroy`, all in `cloudflare_dns_record.web`: the four apex A
-records back to GitHub's addresses and `www` back to `kphutt.github.io`, in place, and the
-four AAAA records deleted. In a hurry, the same edit by hand in `dns.tf` (paste back the
-`web_records` from before B) is just as good, applied first and reviewed after.
-
-It takes effect as resolvers drop the Google records: within five minutes (TTL 300) for
-most visitors. GitHub Pages serves them at once, because it never stopped being configured
-for `kphutt.com` (`static/CNAME`) and still holds its certificate.
-
-That rollback is instant only while the Pages certificate is valid. Measured on
-2026-11-10, it expires **2027-02-01**. GitHub cannot renew it while DNS points at Google,
-so after that date a rollback also waits for GitHub to issue a new one, with HTTPS broken
-meanwhile. Check before switching:
-
-```bash
-python -c "import ssl,socket; s=ssl.create_default_context().wrap_socket(socket.create_connection(('kphutt.com',443)),server_hostname='kphutt.com'); print(s.getpeercert()['notAfter'])"
+python -c "import ssl,socket; s=ssl.create_default_context().wrap_socket(socket.create_connection(('185.199.108.153',443)),server_hostname='kphutt.com'); print(s.getpeercert()['notAfter'])"
 ```
 
 ### After the switch
@@ -261,8 +276,13 @@ Once both certificates are ready:
 6. SSL Labs on `kphutt.com` (results not published): expect B, for TLS 1.0 and 1.1, as on
    the test name. Anything worse: compare with the ADR.
 7. Mozilla HTTP Observatory on `kphutt.com`: expect A+.
-8. Over the next few days, run `python scripts/smoke.py https://kphutt.com` again. Keep
-   Pages configured during this time, so the rollback stays instant.
+8. Over the next few days, run `python scripts/smoke.py https://kphutt.com` again. Pages
+   stays configured until it is turned off after the pull request that retires it ("Retiring
+   Pages"). Until then, a rollback only needs the records.
+
+Result on 2026-11-11: checks 1 to 3 passed, and both names served Google Trust Services
+certificates valid until 2027-02-09. Plain HTTP answers 302 rather than 301. That still
+sends visitors to HTTPS, and after the first visit HSTS has the browser go there directly.
 
 ### Pull request C: lock the web records again
 
@@ -271,20 +291,6 @@ their lines, so a fresh state adopts them rather than creating copies (read each
 `mise exec -- tofu state show 'cloudflare_dns_record.web["apex-aaaa-32"]'`, the `id` line),
 and set both lines from "Unlocking the web records" back to `true`. **Expected plan:**
 `No changes`. A rollback after C carries the same two-line unlock.
-
-### Later: pull request D, once Pages is retired
-
-Not before the TLS question in the ADR is revisited. These go stale at the switch and are
-updated when Pages is switched off ("Retiring Pages" below), not before, because Pages stays
-the rollback target until then:
-
-- `AGENTS.md`: "What This Is" and "Deployment, DNS and TLS" still describe Pages serving
-  the site, `static/CNAME` and the Pages DNS records; "Do not turn the DNS proxy on" and
-  "Security headers" are written about Pages.
-- `static/CNAME`, and the `CNAME` check in `scripts/check_build.py`.
-- `server/sws.toml`: the comment on the www redirect says it is only reached if www is
-  pointed at the service.
-- `docs/design/cutover-runbook.md`: "The records as they are today".
 
 ## Step 5 under option D: the apex, through a Cloudflare Worker
 
@@ -313,19 +319,22 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
 
 ## Retiring Pages (either option)
 
-Done. After the switch was verified, GitHub Pages was retired in its own pull request, and
-Pages is not a rollback target any more: a rollback now means putting the old records back
-and re-enabling Pages by hand, which only works while its certificate lasts. That pull request:
+After the switch was verified, GitHub Pages was retired in its own pull request. Pages is
+no longer a quick rollback target, because a rollback now has to bring it back first
+("Rollback", under pull request B). That pull request:
 
-- removed the `deploy` job and the Pages artifact upload from `hugo.yml`;
-- removed the `CNAME` check from `scripts/check_build.py` and deleted `static/CNAME`;
-- deleted the in-page CSP meta tag in `layouts/partials/extend_head.html` (the header
-  replaces it), and dropped `check_page_policy` from `scripts/check_build.py`, which now
-  checks the header policy in `server/sws.toml` alone;
+- removed the `deploy` job and the Pages artifact upload from `hugo.yml`.
+- removed the `CNAME` check from `scripts/check_build.py` and deleted `static/CNAME`.
+- deleted the in-page CSP meta tag in `layouts/partials/extend_head.html`, because the header
+  replaces it. It also dropped `check_page_policy` from `scripts/check_build.py`, which now
+  checks the header policy in `server/sws.toml` alone.
 - rewrote the "Deployment, DNS and TLS" and "Security headers" sections of `AGENTS.md`.
+- rewrote the other docs that still described Pages as live, or the switch as still to come.
 
-Then, outside the repo: GitHub Pages was disabled in the repository settings (Settings,
-Pages, Build and deployment, set the source to none, and clear the custom domain), and the
-`github-pages` environment was deleted. The required status check is `build`, which stays:
-it is the summary job that passes only when the site build, the container smoke test and the
-infra checks all pass. Branch protection needs no change.
+Two steps outside the repo follow its merge. Turn Pages off in the repository settings
+(Settings, Pages: remove the custom domain, then unpublish the site). Then delete the
+`github-pages` environment (Settings, Environments).
+
+Branch protection needs no change. Its required status check is `build`, the summary job
+that passes only when the site build, the container smoke test and the infra checks all
+pass.

@@ -87,8 +87,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   #   - this repository, by numeric id (a name can be re-registered after a rename);
   #   - the main branch (a pull request runs on refs/pull/..., so it never qualifies);
   #   - only the deploy and rollback workflow files;
-  #   - only a job in the cloud-run environment, so other jobs in those files (the Pages
-  #     deploy also holds an OIDC token) cannot use it;
+  #   - only a job in the cloud-run environment, so a job in those files that does not name
+  #     that environment cannot use it, even with an OIDC token;
   #   - only a push, a manual run or a schedule. All three build main exactly as it is.
   #     Triggers such as pull_request_target or workflow_run also run on main while
   #     handling another branch's input, so adding one to either file must not quietly

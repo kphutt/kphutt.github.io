@@ -221,8 +221,8 @@ run "the_test_name_does_not_change_the_production_records" {
   }
 }
 
-# The apex and www point at exactly what their mappings ask for (site-domain.tf), so the
-# certificate check can pass and nothing is left pointing at GitHub Pages.
+# The apex and www point at exactly what their mappings ask for (site-domain.tf), so Google
+# can issue and renew their certificates.
 run "the_web_records_are_what_the_mappings_ask_for" {
   command = plan
 

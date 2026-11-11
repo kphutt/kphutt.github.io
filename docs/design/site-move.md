@@ -115,7 +115,8 @@ person does is run it with an owner's credentials, and the few things no code ca
   (`infra/dns.tf`), adopted as they were. The DNS changes at the cutover are edits to that
   file, made in review, then a plan and an apply.
 - Turn off Cloudflare Web Analytics automatic injection for the zone, if it is on.
-- Done after the cutover: the Pages workflow is gone, and Pages is disabled in the repository settings.
+- After the cutover: remove the Pages workflow, then turn Pages off in the repository
+  settings and delete the `github-pages` environment (the runbook, "Retiring Pages").
 
 ## Analytics
 

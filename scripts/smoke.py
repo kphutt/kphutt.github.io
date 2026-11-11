@@ -188,8 +188,8 @@ def main() -> int:
     if not any(re.fullmatch(r"/assets/css/stylesheet\.[0-9a-f]+\.css", h) for h in loads):
         failures.append("homepage links no fingerprinted stylesheet")
 
-    # A directory without its slash redirects to the one with it, as the site always has: exactly
-    # /posts/, relative, so it stays on whichever host was asked.
+    # A directory without its slash redirects to the one with it: exactly /posts/, relative,
+    # so it stays on whichever host was asked.
     got, headers, _ = fetch(base + "/posts")
     location = headers.get("Location", "")
     if got not in (301, 308) or location != "/posts/":

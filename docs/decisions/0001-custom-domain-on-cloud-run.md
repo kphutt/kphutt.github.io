@@ -116,8 +116,9 @@ site refuses today. We accept that for now. The pages are public and static, not
 secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.3. Scanners
 that cap the grade for TLS 1.0 and 1.1 will report it.
 
-**To revisit.** Revisit by 2027-02-10 (three months). GitHub Pages was retired after the
-cutover, so this review no longer gates anything; it is a date to look at the question again.
+**To revisit.** Revisit by 2027-02-10 (three months). This review was once due before
+GitHub Pages was switched off. Pages is now retired, so nothing waits on this review. The
+date is a reminder to look at the question again.
 The TLS question is not closed.
 
 **Why not the others, for now**
@@ -164,7 +165,7 @@ differently.
   handles every request. A placeholder such as `AAAA 100::` (a discard address) makes that
   explicit. Flattening does not come into it.
 
-Either way, `www` keeps redirecting to the apex as it does on Pages: under A the server does
+Either way, `www` keeps redirecting to the apex as it did on Pages: under A the server does
 it by host name, under D a Cloudflare redirect rule does.
 
 ## Client addresses in the request logs

@@ -208,7 +208,7 @@ jobs:
     if: github.event_name != 'pull_request' && vars.WIF_PROVIDER != ''
     runs-on: ubuntu-24.04
     # The Google identity trusts only tokens from this environment (infra/identities.tf),
-    # so no other job in this file can use it.
+    # so a job that does not name it cannot use that identity.
     environment: cloud-run
     timeout-minutes: 15
     permissions:

@@ -71,8 +71,8 @@ in and creating the Cloudflare token.
    (The first deploy would create the environment anyway, without that limit; the Google
    side refuses anything but `main` either way.)
 6. `mise exec -- python infra/seed.py vars --apply` sets the six repository variables the
-   deploy workflow reads. Until they exist, the Cloud Run deploy job skips itself, so the
-   workflow keeps working for GitHub Pages.
+   deploy workflow reads. Until they exist, the Cloud Run deploy job skips itself, and the
+   workflow still builds and checks the site.
 
 ## The test name (`next.kphutt.com`)
 
@@ -146,9 +146,9 @@ re-checks ownership from time to time and drops it once the CNAME is gone.
 ## The live names (`site-domain.tf`)
 
 The mappings that serve `kphutt.com` and `www.kphutt.com` from Cloud Run, and the proof
-that the account running OpenTofu owns `kphutt.com`. Always on. Applying it moves no
-traffic: a mapping only serves once DNS points at it, and the apex and `www` records are in
-`dns.tf`, changed only by the cutover (`docs/design/cutover-runbook.md`, step 5).
+that the account running OpenTofu owns `kphutt.com`. Always on. A mapping serves a name only
+while that name's DNS points at Google. The apex and `www` records that point there are in
+`dns.tf`, so applying this file alone never moves traffic.
 
 The apply:
 
@@ -160,8 +160,8 @@ The apply:
    `kphutt.com`;
 3. creates the two mappings, and checks each asks for exactly its list: Google's four A and
    four AAAA addresses for the apex, one CNAME to `ghs.googlehosted.com` for `www` (a
-   subdomain of a verified name). Anything else stops the apply. Those lists are the
-   records the cutover writes into `dns.tf`.
+   subdomain of a verified name). Anything else stops the apply. `dns.tf` holds the same
+   records, and `tests/dns.tftest.hcl` checks that the two match.
 
 ### Guards on the ownership record
 
@@ -188,8 +188,7 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
 
 - `cloudflare_dns_record.web` (list `local.web_records`): the apex's four A and four AAAA
   records and the `www` CNAME that serve the live site, pointing at the Cloud Run mappings
-  in `site-domain.tf` (they pointed at GitHub Pages until the cutover). These are the
-  records the cutover changed.
+  in `site-domain.tf`.
 - `cloudflare_dns_record.mail` (list `local.mail_records`): seven MX, and the SPF, DKIM and
   DMARC TXT records.
 - `cloudflare_dns_record.services` (list `local.service_records`): `lodestar.kphutt.com`, a
@@ -198,11 +197,11 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
   guards below allow only CNAMEs to Google's mapping host, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
-resource: the cutover has to unlock the web records without unlocking mail or the services.
+resource: a rollback has to unlock the web records without unlocking mail or the services.
 
 A web record may be written before it exists, with `id = null`: its import is skipped and
-the apply creates it. The cutover did this for the apex's AAAA records, and their ids are now
-written in, so a fresh state adopts them. Mail records always have an id.
+the apply creates it. The apex's AAAA records were added that way. Their ids are now written
+in, so a fresh state adopts them. Mail records always have an id.
 
 They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
 so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
@@ -266,11 +265,10 @@ certificate):
 
 - **Site down**: the check fails from two or more regions for 30 minutes (two checks in a row).
 - **TLS certificate expiring**: a certificate has fewer than `uptime_cert_expiry_days` days
-  left (default 14). GitHub Pages and Google renew their managed certificates long before that, so this
-  means a renewal failed. Each alert says what to do, for whichever of the two serves the name.
+  left (default 14). Google renews its managed certificates long before that, so this
+  means a renewal failed. Each alert says what to do.
 
-`kphutt.com` and `www.kphutt.com` are watched by default, whoever serves them, so the same
-checks cover the move. Google follows redirects and judges the final answer, so `www`, which
+`kphutt.com` and `www.kphutt.com` are watched by default. Google follows redirects and judges the final answer, so `www`, which
 redirects to the apex, is held to the final 200. That still proves its certificate handshake
 and that the redirect lands on a live page. Its certificate-expiry alert measures the apex's
 certificate. To watch another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
