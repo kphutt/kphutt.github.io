@@ -1,5 +1,8 @@
 # Moving the site from GitHub Pages to Cloud Run
 
+Status: the move is done, and the site is served from Cloud Run. GitHub Pages is still on in
+the repository settings until its owner turns it off. The text below is the plan, with notes added where its steps are done.
+
 ## Why
 
 GitHub Pages cannot send HTTP response headers. Most of the security headers a site should
@@ -91,10 +94,10 @@ Each step is its own pull request, through the normal gate.
    and zero requests to other domains; an Observatory grade.
 5. **Apex cutover, then retire Pages** ([runbook](cutover-runbook.md), with the exact
    records to restore). The records' TTL is already five minutes, so a change and its undo
-   both take effect quickly. Keep Pages serving until the new site is verified. Only after
-   a stable cutover: remove the Pages deploy job and `static/CNAME`, drop the in-page CSP,
-   and update `AGENTS.md`. The required check stays `build`, so branch protection does not
-   change.
+   both take effect quickly. Pages kept serving until the new site was verified. Then its
+   retirement began: the Pages deploy job and `static/CNAME` were removed, the in-page CSP was
+   dropped, and `AGENTS.md` was updated. The required check stays `build`, so branch
+   protection did not change.
 
 ## Steps an owner runs
 
@@ -112,7 +115,9 @@ person does is run it with an owner's credentials, and the few things no code ca
   (`infra/dns.tf`), adopted as they were. The DNS changes at the cutover are edits to that
   file, made in review, then a plan and an apply.
 - Turn off Cloudflare Web Analytics automatic injection for the zone, if it is on.
-- Remove the Pages workflow and disable Pages, after the cutover.
+- After the cutover: remove the Pages deploy job from `hugo.yml`, which still deploys Cloud
+  Run. Then turn Pages off in the repository settings and delete the `github-pages`
+  environment (the runbook, "Retiring Pages").
 
 ## Analytics
 
@@ -121,5 +126,5 @@ record. A log exclusion keeps them from being stored twice if a log sink is adde
 
 ## Open questions
 
-- Whether to close the TLS 1.0 and 1.1 gap. The ADR says to revisit it by 2027-02-10 (three months), before GitHub Pages is switched off.
+- Whether to close the TLS 1.0 and 1.1 gap. The ADR says to revisit it by 2027-02-10 (three months).
   Certificate renewal on the mapping is still unproven: it needs about 90 days.

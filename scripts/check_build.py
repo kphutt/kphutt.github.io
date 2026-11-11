@@ -77,7 +77,7 @@ POLICY_FLOOR = {
 REQUIRED_DIRECTIVES = ("default-src", "script-src", "base-uri", "form-action")
 
 # The response headers the server sends, from its config. These are what a browser
-# enforces once the site is off GitHub Pages; the in-page policy above is a fallback.
+# enforces. The header is the only CSP: the pages carry no in-page copy.
 SERVER_CONFIG = Path(__file__).resolve().parent.parent / "server" / "sws.toml"
 
 # Headers the catch-all rule must set, and the values each may take.
@@ -188,30 +188,6 @@ def check_inline_code(root: Path, failures: list) -> None:
             failures.append(f"{page}: javascript: URL is inline script")
 
 
-def check_page_policy(root: Path, failures: list) -> None:
-    """Every page must carry the in-page policy, and it must hold the floor."""
-    for path in sorted(root.rglob("*.html")):
-        html = path.read_text(encoding="utf-8", errors="replace")
-        page = path.relative_to(root).as_posix()
-        # Hugo's alias stubs (e.g. /posts/page/1/) are a meta refresh with no body. Only
-        # that shape is exempt; a real page that happens to refresh is still checked.
-        if re.search(r"http-equiv=[\"']?refresh", html, re.I) and not re.search(r"<body\b", html, re.I):
-            continue
-        # The policy value contains single quotes ('none', 'self'), so the capture stops
-        # only at the closing double quote. Hugo minifies attributes and leaves http-equiv
-        # unquoted, hence the optional quotes around that name.
-        match = re.search(
-            r'<meta[^>]*http-equiv=["\']?Content-Security-Policy["\']?[^>]*?content="([^"]+)"',
-            html,
-            re.I,
-        )
-        if not match:
-            failures.append(f"{page} has no Content-Security-Policy")
-            continue
-        for problem in policy_problems(match.group(1)):
-            failures.append(f"{page} in-page CSP is weaker than the floor: {problem}")
-
-
 def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
     """Nothing the browser fetches by itself may come from another origin.
 
@@ -266,10 +242,9 @@ def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
 def check_server_headers(failures: list) -> None:
     """The server config must send the full header set, with a policy at or above the floor.
 
-    This is the policy that matters once the site is served from the container: unlike
-    the in-page one, it covers frame-ancestors and applies to every response, including
-    feeds, images and the 404 page. Loosening it here fails the build just as loosening
-    the in-page policy does.
+    This is the policy the site is served with. It covers frame-ancestors and applies to
+    every response, including feeds, images and the 404 page. Loosening it below the floor
+    fails the build.
     """
     name = SERVER_CONFIG.relative_to(SERVER_CONFIG.parent.parent).as_posix()
     try:
@@ -473,14 +448,7 @@ def main() -> int:
         elif canonical.group(1).rstrip("/") != base:
             failures.append(f"canonical is {canonical.group(1)}, expected {base}/")
 
-    # 3. static/CNAME must survive into the build, or the custom domain is dropped on deploy.
-    cname = root / "CNAME"
-    if not cname.is_file():
-        failures.append("CNAME missing from build output -- custom domain would be lost")
-    elif cname.read_text(encoding="utf-8").strip() != host:
-        failures.append(f"CNAME says {cname.read_text().strip()!r}, expected {host!r}")
-
-    # 4. Files the site is supposed to publish must actually be published.
+    # 3. Files the site is supposed to publish must actually be published.
     #
     # Every one of these is produced by configuration rather than by a source file, which
     # is the failure this repo keeps hitting: the config reads correctly, Hugo reports no
@@ -493,7 +461,7 @@ def main() -> int:
         if not (root / name).is_file():
             failures.append(f"{name} missing from build output -- {why}")
 
-    # 5. Every internal reference must resolve to something in the build output.
+    # 4. Every internal reference must resolve to something in the build output.
     #
     # The theme's head partial links five icon files by default. None of them existed, so
     # every page load fired five 404s and the site had no tab icon -- for months, silently,
@@ -513,7 +481,7 @@ def main() -> int:
             more = f" (+{len(pages) - 3} more)" if len(pages) > 3 else ""
             failures.append(f"broken internal reference: {target} -- linked from {shown}{more}")
 
-    # 6. The homepage's content wrapper must carry the same classes as a post's.
+    # 5. The homepage's content wrapper must carry the same classes as a post's.
     #
     # layouts/index.html is a local override; post pages render through the theme's own
     # template. When the theme moved its typography rules from .post-content onto a new
@@ -551,15 +519,14 @@ def main() -> int:
             + " -- layouts/index.html has drifted from the theme template"
         )
 
-    # 7. No inline code, a policy that holds the floor, and nothing loaded from elsewhere.
+    # 6. No inline code, and nothing loaded from elsewhere.
     check_inline_code(root, failures)
-    check_page_policy(root, failures)
     check_no_outside_loads(root, base, failures)
 
-    # 8. The response headers the server will send hold the same floor, and more.
+    # 7. The server's CSP holds the floor, and every other required header is set.
     check_server_headers(failures)
 
-    # 8b. security.txt is present, well formed and unexpired.
+    # 8. security.txt is present, well formed and unexpired.
     check_security_txt(root, base, failures)
 
     # 9. The theme files overridden with modified copies have not moved upstream.
@@ -571,9 +538,9 @@ def main() -> int:
             print(f"  - {f}")
         return 1
 
-    print(f"Build check passed: all URLs use {base}, canonical correct, CNAME intact,")
+    print(f"Build check passed: all URLs use {base}, canonical correct,")
     print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve,")
-    print("no inline code, CSP at or above the floor in the page and in server/sws.toml,")
+    print("no inline code, CSP at or above the floor in server/sws.toml,")
     print("nothing loaded from another origin, security.txt valid, theme overrides in sync.")
     return 0
 

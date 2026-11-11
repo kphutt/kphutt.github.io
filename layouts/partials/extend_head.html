@@ -2,20 +2,21 @@
   PaperMod calls this partial from the end of its own head.html, so additions land in
   every page's <head> without forking the theme's template.
 
-  Referrer-Policy, delivered in HTML. This is a standard mechanism from the Referrer
-  Policy spec, not a workaround -- note it is name="referrer", not http-equiv, and not
-  spelled the same as the HTTP header.
-
-  It exists here because GitHub Pages cannot set response headers at all. Most security
-  headers therefore cannot be delivered from this site: HSTS, X-Content-Type-Options,
-  X-Frame-Options and Permissions-Policy have no HTML equivalent, and faking them with
-  http-equiv does nothing except make the source look secure. Referrer-Policy is one of
-  the two that genuinely can be set in the document.
+  Referrer-Policy, delivered in HTML as well as in the response header (server/sws.toml).
+  This is a standard mechanism from the Referrer Policy spec. Note that it is
+  name="referrer", not http-equiv, and not spelled the same as the HTTP header. On an HTML
+  page, this tag sets the policy after the header does, so this tag decides. Both carry the
+  same value, so they agree. The header also covers responses that are not HTML. Keep the two
+  values the same.
 
   strict-origin-when-cross-origin: send the full URL within this site, send only the
-  origin to other sites, send nothing when going from HTTPS to HTTP. It matches what
-  current browsers already default to, so this pins the behaviour rather than changing
-  it -- worth stating explicitly so it does not depend on a default staying put.
+  origin to other sites, send nothing when going from HTTPS to HTTP.
+
+  There is deliberately no Content-Security-Policy meta tag here. The policy is a response
+  header in server/sws.toml, which also covers frame-ancestors and every non-HTML response,
+  and scripts/check_build.py holds it to a floor. A second copy in the page would have to be
+  kept identical to it, with nothing to check that. A policy in both places applies as the
+  intersection of the two.
 */ -}}
 <meta name="referrer" content="strict-origin-when-cross-origin">
 {{- /*
@@ -34,23 +35,3 @@
   cannot drift apart.
 */ -}}
 <link rel="icon" type="image/svg+xml" href="{{ "favicon.svg" | relURL }}">
-{{- /*
-  Content-Security-Policy. content-security-policy IS one of the accepted http-equiv
-  values, so unlike the headers named above this one genuinely works from the document.
-
-  The policy starts from default-src 'none' and allows only what the site actually uses:
-  its own stylesheet and its own images. That is realistic here because the site loads
-  nothing from anywhere else -- the CSS contains no url(), no @import and no @font-face,
-  and there are no scripts at all. The many outbound links in the content are <a> links,
-  which CSP does not govern.
-
-  script-src is 'none'. There is no inline code left to allow: the theme's inline scripts
-  and its one inline style are removed by the head.html and footer.html overrides in this
-  directory, so the policy needs neither 'unsafe-inline' nor hashes. scripts/check_build.py
-  fails the build if inline script or style comes back, or if this policy loosens.
-
-  Two things cannot be done from a meta element and are deliberately absent rather than
-  written in and silently ignored: frame-ancestors (so no clickjacking protection) and
-  report-uri. Both need a real response header, which GitHub Pages cannot send.
-*/ -}}
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">

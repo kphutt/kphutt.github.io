@@ -41,14 +41,14 @@ directory-listing = false
 ignore-hidden-files = false
 disable-symlinks = true
 
-# Hugo's URLs end in a slash, and GitHub Pages redirects /posts to /posts/. Keep that.
+# Hugo's URLs end in a slash, and /posts redirects to /posts/. Keep that.
 redirect-trailing-slash = true
 index-files = "index.html"
 
 [advanced]
 
-# www.kphutt.com redirects to the apex, path and query kept, as it does on GitHub Pages.
-# Only reached if www is pointed at this service (docs/design/cutover-runbook.md).
+# www.kphutt.com redirects to the apex, path and query kept. It is reached because www is
+# mapped to this service (infra/site-domain.tf).
 [[advanced.redirects]]
 host = "www.kphutt.com"
 source = "/{**}"
@@ -80,8 +80,8 @@ Cross-Origin-Resource-Policy = "same-origin"
 # short. Five minutes keeps a deploy visible quickly without a request per page view.
 Cache-Control = "public, max-age=300"
 
-# The RSS feeds and the sitemap. The server's default for .xml is text/xml; GitHub Pages
-# served application/xml, and readers and crawlers have seen that for years. Keep it.
+# The RSS feeds and the sitemap. The server's default for .xml is text/xml. Serve them as
+# application/xml, the type registered for XML documents.
 [[advanced.headers]]
 source = "**/*.xml"
 headers.Content-Type = "application/xml"

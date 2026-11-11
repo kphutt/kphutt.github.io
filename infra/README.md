@@ -71,8 +71,8 @@ in and creating the Cloudflare token.
    (The first deploy would create the environment anyway, without that limit; the Google
    side refuses anything but `main` either way.)
 6. `mise exec -- python infra/seed.py vars --apply` sets the six repository variables the
-   deploy workflow reads. Until they exist, the Cloud Run deploy job skips itself, so the
-   workflow keeps working for GitHub Pages.
+   deploy workflow reads. The Cloud Run deploy job skips itself until `WIF_PROVIDER` is set,
+   and the workflow still builds and checks the site.
 
 ## The test name (`next.kphutt.com`)
 
@@ -146,9 +146,9 @@ re-checks ownership from time to time and drops it once the CNAME is gone.
 ## The live names (`site-domain.tf`)
 
 The mappings that serve `kphutt.com` and `www.kphutt.com` from Cloud Run, and the proof
-that the account running OpenTofu owns `kphutt.com`. Always on. Applying it moves no
-traffic: a mapping only serves once DNS points at it, and the apex and `www` records are in
-`dns.tf`, changed only by the cutover (`docs/design/cutover-runbook.md`, step 5).
+that the account running OpenTofu owns `kphutt.com`. Always on. A mapping serves a name only
+while that name's DNS points at Google. The apex and `www` records that point there are in
+`dns.tf`, so creating a mapping moves no traffic until its records point at Google.
 
 The apply:
 
@@ -160,8 +160,8 @@ The apply:
    `kphutt.com`;
 3. creates the two mappings, and checks each asks for exactly its list: Google's four A and
    four AAAA addresses for the apex, one CNAME to `ghs.googlehosted.com` for `www` (a
-   subdomain of a verified name). Anything else stops the apply. Those lists are the
-   records the cutover writes into `dns.tf`.
+   subdomain of a verified name). Anything else stops the apply. `dns.tf` holds the same
+   records, and `tests/dns.tftest.hcl` checks that the two match.
 
 ### Guards on the ownership record
 
@@ -188,8 +188,7 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
 
 - `cloudflare_dns_record.web` (list `local.web_records`): the apex's four A and four AAAA
   records and the `www` CNAME that serve the live site, pointing at the Cloud Run mappings
-  in `site-domain.tf` (they pointed at GitHub Pages until the cutover). These are the
-  records the cutover changed.
+  in `site-domain.tf`.
 - `cloudflare_dns_record.mail` (list `local.mail_records`): seven MX, and the SPF, DKIM and
   DMARC TXT records.
 - `cloudflare_dns_record.services` (list `local.service_records`): `lodestar.kphutt.com`, a
@@ -198,11 +197,12 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
   guards below allow only CNAMEs to Google's mapping host, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
-resource: the cutover has to unlock the web records without unlocking mail or the services.
+resource. So a change that has to delete a web record can unlock the web records alone,
+leaving mail and the services locked.
 
 A web record may be written before it exists, with `id = null`: its import is skipped and
-the apply creates it. The cutover did this for the apex's AAAA records, and their ids are now
-written in, so a fresh state adopts them. Mail records always have an id.
+the apply creates it. The apex's AAAA records were added that way. Their Cloudflare ids are now
+in `dns.tf`, so on a fresh state the import blocks adopt them. Mail records always have an id.
 
 They existed before this code. Import blocks adopted them exactly as Cloudflare held them,
 so the first plan said "15 to import, 0 to add, 0 to change, 0 to destroy". The import
@@ -236,11 +236,12 @@ The guards:
   - Mail: never lifted. `scripts/check_infra.py` requires `prevent_destroy = true` on
     `cloudflare_dns_record.mail` and has no setting that allows anything else. Deleting a
     mail record means changing that rule, in review.
-  - Web: lifted only for a rollback, by one pull request that changes exactly two lines,
-    `prevent_destroy = true` to `false` on `cloudflare_dns_record.web` in `dns.tf`, and
-    `WEB_PREVENT_DESTROY = "true"` to `"false"` in `scripts/check_infra.py`. Either line alone
-    fails the check. A later pull request sets both back (`docs/design/cutover-runbook.md`
-    says when).
+  - Web: lifted only by a reviewed pull request whose change, or its undo, has to delete a web
+    record. A later pull request sets it back, as pull request C did after the switch
+    (`docs/design/cutover-runbook.md`). The unlock changes exactly two lines, and either line
+    alone fails the check:
+    - in `dns.tf`, `prevent_destroy = true` becomes `false` on `cloudflare_dns_record.web`.
+    - in `scripts/check_infra.py`, `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
 - `scripts/check_infra.py` fails unless `dns.tf` holds only these three resources. Each has
   its own fixed list, with one literal line per record, its own import block, DNS only,
   automatic TTL and `prevent_destroy` as above. Each list allows only its own kind of
@@ -266,11 +267,10 @@ certificate):
 
 - **Site down**: the check fails from two or more regions for 30 minutes (two checks in a row).
 - **TLS certificate expiring**: a certificate has fewer than `uptime_cert_expiry_days` days
-  left (default 14). GitHub Pages and Google renew their managed certificates long before that, so this
-  means a renewal failed. Each alert says what to do, for whichever of the two serves the name.
+  left (default 14). Google renews its managed certificates automatically, so this
+  means it has not been renewed yet. Each alert says what to do.
 
-`kphutt.com` and `www.kphutt.com` are watched by default, whoever serves them, so the same
-checks cover the move. Google follows redirects and judges the final answer, so `www`, which
+`kphutt.com` and `www.kphutt.com` are watched by default. Google follows redirects and judges the final answer, so `www`, which
 redirects to the apex, is held to the final 200. That still proves its certificate handshake
 and that the redirect lands on a live page. Its certificate-expiry alert measures the apex's
 certificate. To watch another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.

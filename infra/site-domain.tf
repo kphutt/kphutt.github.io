@@ -9,13 +9,12 @@
 #   2. the Google ownership record that checks it (Site Verification);
 #   3. the domain mappings for kphutt.com and www.kphutt.com.
 #
-# A mapping does nothing until DNS points at Google. The apex and www still point at GitHub
-# Pages, and only dns.tf may change that (the cutover pull request). Google issues each
-# name's certificate only once its DNS points here, so creating the mappings early does not
-# shorten the switch (the runbook says why).
+# A mapping serves a name only while that name's DNS points at Google. The apex and www
+# records that point there are in dns.tf, and only dns.tf may change them. Google issues and
+# renews each name's certificate only while its DNS points here.
 #
-# Each mapping checks that Google asks for exactly the records in its fixed list below. The
-# cutover writes those same values into dns.tf, and tests/dns.tftest.hcl pins them there.
+# A postcondition on each mapping checks that Google asks for exactly the records in its fixed list below.
+# dns.tf holds those same values, and tests/dns.tftest.hcl checks that the two match.
 
 locals {
   # A DNS_CNAME token for kphutt.com is "<label> <target>", for example
@@ -109,8 +108,9 @@ resource "google_site_verification_web_resource" "apex" {
   depends_on = [cloudflare_dns_record.apex_verification]
 }
 
-# 3. The mappings. Once the cutover points DNS at Google, deleting one takes that name off
-#    the internet, so neither can be deleted without a reviewed change to its lifecycle.
+# 3. The mappings. DNS points at them, so deleting one takes that name off the internet.
+#    Neither can be deleted through OpenTofu while prevent_destroy is set, and removing it
+#    is a change to review.
 resource "google_cloud_run_domain_mapping" "apex" {
   location = var.region
   name     = local.zone_name

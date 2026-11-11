@@ -2,10 +2,9 @@
 # about to expire. Both email the existing alert channel (monitoring.tf). Alerts, not
 # dashboards: nothing here is meant to be looked at.
 #
-# Whoever serves the names is watched: GitHub Pages today, then Cloud Run after the cutover.
-# Both renew their managed certificates by themselves. A renewal that fails stays silent until
-# the old certificate expires and browsers refuse the site, so the certificate alert fires
-# with plenty of time left to fix it.
+# Cloud Run serves kphutt.com and www, and Google renews their certificates automatically.
+# Nothing in this setup emails when a renewal fails, so the certificate alert warns once fewer
+# than 14 days remain (the default).
 #
 # Google follows every redirect and judges the final answer, so a name that redirects (www
 # goes to the apex) is held to the final 200. That still proves its certificate handshake and
@@ -34,7 +33,7 @@ variable "uptime_hostnames" {
 }
 
 variable "uptime_cert_expiry_days" {
-  description = "Email when a certificate has fewer than this many days left. GitHub Pages and Google renew their managed certificates well before this, so reaching it means a renewal has failed."
+  description = "Email when a certificate has fewer than this many days left. This is the alert threshold."
   type        = number
   default     = 14
 
@@ -117,9 +116,14 @@ resource "google_monitoring_alert_policy" "site_down" {
       What it means: the uptime check for this site has failed from two or more regions for about 30 minutes. Visitors probably cannot load it, or the certificate no longer validates.
 
       What to do:
-      1. Open the site in a browser. Check which provider answers: DNS pointing at 185.199.108-111.153 or kphutt.github.io means GitHub Pages; DNS pointing at Google means Cloud Run.
-      2. If GitHub Pages serves the name: check the Cloudflare records are DNS-only (not proxied) and the Pages custom-domain and HTTPS status. See AGENTS.md, "Do not turn the DNS proxy on".
-      3. If Cloud Run serves the name: check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}`. For a bad deploy, use the `rollback.yml` workflow. For a DNS problem, see docs/design/cutover-runbook.md.
+      1. Open the site in a browser. Then check that public DNS still points at Google:
+         - kphutt.com A: 216.239.32.21, 216.239.34.21, 216.239.36.21, 216.239.38.21
+         - kphutt.com AAAA: 2001:4860:4802:32::15, 2001:4860:4802:34::15, 2001:4860:4802:36::15, 2001:4860:4802:38::15
+         - www.kphutt.com CNAME: ghs.googlehosted.com
+
+         If they differ, compare with infra/dns.tf (infra/README.md, "Production DNS").
+      2. Check the Cloudflare records are DNS-only (not proxied). See AGENTS.md, "Do not turn the DNS proxy on".
+      3. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}`. The status can lag behind what is served, so trust a real HTTPS request over it. For a bad deploy, use the `rollback.yml` workflow.
       4. If the cost cutoff has turned the site off (cost-cutoff.md), this alert is expected. Reopen the site per that doc.
     EOT
   }
@@ -157,12 +161,13 @@ resource "google_monitoring_alert_policy" "cert_expiring" {
     mime_type = "text/markdown"
     subject   = "TLS certificate expiring: $${resource.label.host}"
     content   = <<-EOT
-      What it means: the certificate for the host named above has fewer than ${var.uptime_cert_expiry_days} days left. GitHub Pages and Google renew their managed certificates long before that, so a renewal has failed. When it expires, browsers will refuse the site. If the host redirects (www), this alert measures the certificate of the host it redirects to (kphutt.com), so check that one first. This alert does not cover www's own certificate.
+      What it means: the certificate served for the host named in this alert has fewer than ${var.uptime_cert_expiry_days} days left. For www, that is kphutt.com's certificate, because the check follows www's redirect to kphutt.com. This alert does not cover www's own certificate. If it expires before Google replaces it, browsers will refuse the site.
 
       What to do:
-      1. If GitHub Pages serves the name (DNS points at 185.199.108-111.153 or kphutt.github.io): check the Cloudflare records are DNS-only (not proxied) and the Pages custom-domain and HTTPS status. See AGENTS.md, "Do not turn the DNS proxy on".
-      2. If Cloud Run serves the name (DNS points at Google): check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`); its certificate status says why provisioning is stuck. Confirm DNS still points where the mapping says. For a DNS problem, see docs/design/cutover-runbook.md.
-      3. If it does not recover, re-save the custom domain in Pages, or delete and recreate the domain mapping in OpenTofu, and do it well before the expiry date.
+      1. Check that public DNS still points at Google, with the records in infra/dns.tf. kphutt.com should have four A and four AAAA records, and www should be a CNAME to ghs.googlehosted.com.
+      2. Also check that the records are DNS-only (not proxied). Google renews only while DNS points at it and is not proxied. See AGENTS.md, "Do not turn the DNS proxy on".
+      3. Check the mapping for kphutt.com (`gcloud beta run domain-mappings describe --domain kphutt.com --region ${var.region} --project ${var.project_id}`), and the same for www.kphutt.com. While the certificate is pending, its CertificateProvisioned condition gives Google's reason.
+      4. If DNS and the proxy are right but the certificate is still not replaced with a week left, recreate the mapping. First, in a reviewed pull request, lift its `prevent_destroy` and the matching rule in scripts/check_infra.py. The site is unreachable at that name from the deletion until Google issues the new certificate.
     EOT
   }
 }

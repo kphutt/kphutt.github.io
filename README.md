@@ -4,7 +4,7 @@ Personal website for Karsten Huttelmaier. Built with [Hugo](https://gohugo.io/) 
 
 ## Deployment
 
-Push to `main` triggers a GitHub Actions workflow that builds the site and deploys to GitHub Pages.
+Push to `main` triggers a GitHub Actions workflow that builds and checks the site, then deploys it to Cloud Run. The design is in [`docs/design/site-move.md`](docs/design/site-move.md).
 
 ## Local development
 
