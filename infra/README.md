@@ -193,7 +193,7 @@ resources:
   DMARC TXT records.
 - `cloudflare_dns_record.services` (list `local.service_records`): `lodestar.kphutt.com`, a
   CNAME to `ghs.googlehosted.com` for the lodestar service, which another project runs. Its
-  domain mapping and certificate live in the lodestar project, and the guards below allow only
+  domain mapping and certificate are in the lodestar project, and the guards below allow only
   such CNAMEs, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
@@ -242,11 +242,15 @@ The guards:
     says when).
 - `scripts/check_infra.py` fails unless `dns.tf` holds only these three resources, each over its
   own fixed list with one literal line per record and its own import block, DNS only,
-  automatic TTL and `prevent_destroy` as above. The web list may hold only A, AAAA and CNAME
-  records named `kphutt.com` or `www.kphutt.com`; the mail list only MX and TXT; the services list only CNAMEs to `ghs.googlehosted.com`.
-  So a record cannot be moved between lists to unlock it. Only `dns.tf` may import a Cloudflare
-  record, and no other file may use either list. The test name and anything under it are
-  refused here, and every other file is still refused the apex and `www`.
+  automatic TTL and `prevent_destroy` as above. Each list allows only its own kind of record,
+  so a record cannot be moved between lists to unlock it:
+  - web: A, AAAA and CNAME records named `kphutt.com` or `www.kphutt.com`
+  - mail: MX and TXT
+  - services: CNAMEs to `ghs.googlehosted.com`, one label under the zone
+
+  Only `dns.tf` may import a Cloudflare record, and no other file may use any of the lists.
+  The test name and anything under it are refused here, and every other file is still
+  refused the apex and `www`.
 - Nothing may loosen those pins: `dns.tf` may not use `ignore_changes` or
   `replace_triggered_by`, and no `moved` or `removed` block may be in `dns.tf` or name any
   of them from another file (either would take a record out from under its pins without a
