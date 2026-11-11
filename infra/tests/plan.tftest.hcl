@@ -77,13 +77,14 @@ override_resource {
 }
 
 variables {
-  project_id           = "test-site-project"
-  region               = "us-west1"
-  github_repository    = "example/site"
-  github_repository_id = "42"
-  billing_account      = "000000-000000-000000"
-  alert_email          = "alerts@example.com"
-  cloudflare_zone_id   = "0123456789abcdef0123456789abcdef"
+  apex_verification_expected = "abc123def gv-mockedapex.dv.googlehosted.com"
+  project_id                 = "test-site-project"
+  region                     = "us-west1"
+  github_repository          = "example/site"
+  github_repository_id       = "42"
+  billing_account            = "000000-000000-000000"
+  alert_email                = "alerts@example.com"
+  cloudflare_zone_id         = "0123456789abcdef0123456789abcdef"
   # `tofu test` cannot run import blocks (dns.tf).
   import_production_dns = false
 }
