@@ -111,11 +111,13 @@ def check_deployer_commands() -> bool:
 # and each is held to its own rule.
 #
 # infra/dns.tf (PRODUCTION_FILE) holds the zone's production records, adopted by import
-# blocks, as two resources (PRODUCTION below), each over its own fixed list of one-line
+# blocks, as three resources (PRODUCTION below), each over its own fixed list of one-line
 # entries with every value literal, and each with its own import block:
 #
 #   - cloudflare_dns_record.web over local.web_records: the apex and www (A, AAAA, CNAME);
-#   - cloudflare_dns_record.mail over local.mail_records: MX and TXT.
+#   - cloudflare_dns_record.mail over local.mail_records: MX and TXT;
+#   - cloudflare_dns_record.services over local.service_records: other services' records,
+#     only a CNAME to ghs.googlehosted.com, one label under the zone (SERVICE_NAME).
 #
 # It is the only file that may import a Cloudflare object, the only file that may use those
 # lists, and its records are DNS only and carry prevent_destroy. So a change to the live site's
@@ -223,17 +225,28 @@ TEST_NAME = "next.kphutt.com"
 # to "false" first (docs/design/cutover-runbook.md).
 # The mail records need no such constant: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
-# The two production resources: the list each one runs over, the record types that list may
-# hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
-# an entry may be a record that does not exist yet (id = null, so its import is skipped and
-# the apply creates it). Only the web list may: the cutover adds the apex's new records
-# before Cloudflare has given them ids, and the pull request after the apply writes the ids
-# in. Every mail record exists and is adopted.
+# The three production resources: the list each one runs over, the record types that list
+# may hold, the names it may hold (None: any name in the zone), its prevent_destroy, and
+# whether an entry may be a record that does not exist yet (id = null, so its import is
+# skipped and the apply creates it). The web and services lists may hold a record that
+# doesn't exist yet (id = null), because Cloudflare gives a record its id only when the
+# apply creates it. A later pull request writes that id in. Every mail record already
+# exists, so the mail list may not. A rule may also carry "name_ok" and "value_ok", checks
+# on the name and the content of every entry.
+#
+# Names a service record may never take: the live site, the test name, and anything that is
+# not a plain one-label host (so no underscore names such as _dmarc, no deeper names).
+SERVICE_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.]" + re.escape(ZONE) + "$")
+SERVICE_NAME_REFUSED = {ZONE, "www." + ZONE, TEST_NAME}
 PRODUCTION = {
     "web": {"list": "web_records", "types": {"A", "AAAA", "CNAME"},
             "names": {ZONE, "www." + ZONE}, "prevent_destroy": WEB_PREVENT_DESTROY, "new_records": True},
     "mail": {"list": "mail_records", "types": {"MX", "TXT"},
              "names": None, "prevent_destroy": "true", "new_records": False},
+    "services": {"list": "service_records", "types": {"CNAME"},
+                 "names": None, "prevent_destroy": "true", "new_records": True,
+                 "name_ok": lambda n: bool(SERVICE_NAME.match(n)) and n not in SERVICE_NAME_REFUSED,
+                 "value_ok": lambda v: v == "ghs.googlehosted.com"},
 }
 
 
@@ -332,6 +345,11 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if rule["names"] is not None and rname not in rule["names"]:
             problems.append(f"local.{lst}[{key}]: {rname} does not belong in this list "
                             f"(only {sorted(rule['names'])})")
+        if "name_ok" in rule and not rule["name_ok"](rname):
+            problems.append(f"local.{lst}[{key}]: {rname} is not allowed here (one label under "
+                            f"{ZONE}, never the apex, www or the test name)")
+        if "value_ok" in rule and not rule["value_ok"](content):
+            problems.append(f"local.{lst}[{key}]: {content[:40]!r} is not an allowed target here")
         try:
             good = production_value_ok(rtype, content, priority)
         except ValueError:
