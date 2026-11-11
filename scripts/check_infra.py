@@ -213,12 +213,11 @@ PRODUCTION_FILE = "dns.tf"
 ZONE = "kphutt.com"
 # The default test_hostname (variables.tf). Production entries stay off it and out from under it.
 TEST_NAME = "next.kphutt.com"
-# prevent_destroy on the web records (the apex and www). The cutover replaces those records,
-# which deletes the old ones, so the cutover pull request sets this to "false" together with
-# prevent_destroy = false on cloudflare_dns_record.web in dns.tf, and the pull request after
-# the apply sets both back to "true" (docs/design/cutover-runbook.md). Two lines, both in
-# review. The mail records have no such setting: their prevent_destroy is always "true".
-WEB_PREVENT_DESTROY = "false"
+# prevent_destroy on the web records (the apex and www). The cutover changed the old records in
+# place and added four AAAA records. A rollback deletes those AAAA records, so it must unlock
+# this first. Set it to "false" together with dns.tf (docs/design/cutover-runbook.md).
+# The mail records have no such setting: their prevent_destroy is always "true".
+WEB_PREVENT_DESTROY = "true"
 # The two production resources: the list each one runs over, the record types that list may
 # hold, the names it may hold (None: any name in the zone), its prevent_destroy, and whether
 # an entry may be a record that does not exist yet (id = null, so its import is skipped and

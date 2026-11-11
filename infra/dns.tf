@@ -9,9 +9,9 @@
 # Two resources, each with its own list, import block and lifecycle, because prevent_destroy
 # covers a whole resource:
 #
-#   - cloudflare_dns_record.web: the apex and www, the records the cutover replaces
-#     (docs/design/cutover-runbook.md). Its prevent_destroy is lifted only by the cutover pull
-#     request, together with the matching line in scripts/check_infra.py, and put back after.
+#   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). The cutover
+#     changed them in place. A rollback deletes the four AAAA records, so it lifts prevent_destroy
+#     in a pull request, together with the matching line in scripts/check_infra.py.
 #   - cloudflare_dns_record.mail: MX, SPF, DKIM and DMARC. Its prevent_destroy never comes off;
 #     scripts/check_infra.py has no setting that allows it.
 #
@@ -92,9 +92,9 @@ resource "cloudflare_dns_record" "web" {
   proxied = false
 
   lifecycle {
-    # The cutover pull request sets this false, with WEB_PREVENT_DESTROY in
-    # scripts/check_infra.py, and the next pull request sets both back.
-    prevent_destroy = false
+    # A rollback sets this false, with WEB_PREVENT_DESTROY in scripts/check_infra.py,
+    # and the pull request after it sets both back.
+    prevent_destroy = true
 
     precondition {
       condition     = var.cloudflare_zone_id != ""
