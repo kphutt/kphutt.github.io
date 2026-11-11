@@ -229,8 +229,11 @@ site that no longer exists.
 1. In the repository's Pages settings, add `kphutt.com` back as the custom domain, and check
    that the source is still GitHub Actions. Unpublishing keeps the other settings, and the
    next Pages deploy publishes the site again.
-2. Revert the pull request that retired Pages ("Retiring Pages", below). That restores the
-   Pages deploy job in `hugo.yml` and `static/CNAME`. Merge it, and wait for its Pages
+2. Restore the Pages code from before the pull request that retired Pages ("Retiring Pages",
+   below). These four files hold the Pages deploy job and its checks:
+   `git checkout <its merge commit>^ -- .github/workflows/hugo.yml static/CNAME
+   scripts/check_build.py layouts/partials/extend_head.html`. Restoring only these leaves the
+   docs as they are. Commit the four files in a pull request, merge it, and wait for its Pages
    deploy to finish.
 3. In `infra/dns.tf`, put `local.web_records` back to the table above. The four A records
    and `www` take their old values in place, and the four AAAA lines are deleted. Add the

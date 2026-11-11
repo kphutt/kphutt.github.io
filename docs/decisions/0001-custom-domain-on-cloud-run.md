@@ -116,10 +116,11 @@ site refuses today. We accept that for now. The pages are public and static, not
 secret crosses the connection, and every modern browser negotiates TLS 1.2 or 1.3. Scanners
 that cap the grade for TLS 1.0 and 1.1 will report it.
 
-**To revisit.** Revisit by 2027-02-10 (three months). This review was once due before
-GitHub Pages was switched off. Pages no longer serves the site, so nothing waits on this review. The
-date is a reminder to look at the question again.
-The TLS question is not closed.
+**To revisit.** Revisit by 2027-02-10 (three months). This review was once due before GitHub
+Pages was switched off, so Pages could stay a fallback while the TLS question was open. On
+2026-11-10 I decided Pages is not a standing fallback, so it can be switched off now. The
+emergency rollback in the cutover runbook can still restore it. The TLS question stays open,
+and switching Pages off no longer waits on it.
 
 **Why not the others, for now**
 
