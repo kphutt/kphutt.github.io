@@ -197,7 +197,8 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
   guards below allow only CNAMEs to Google's mapping host, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
-resource: a rollback has to unlock the web records without unlocking mail or the services.
+resource. So a change that has to delete a web record can unlock the web records alone,
+leaving mail and the services locked.
 
 A web record may be written before it exists, with `id = null`: its import is skipped and
 the apply creates it. The apex's AAAA records were added that way. Their Cloudflare ids are now
@@ -235,11 +236,12 @@ The guards:
   - Mail: never lifted. `scripts/check_infra.py` requires `prevent_destroy = true` on
     `cloudflare_dns_record.mail` and has no setting that allows anything else. Deleting a
     mail record means changing that rule, in review.
-  - Web: lifted only for a rollback, by one pull request that changes exactly two lines,
-    `prevent_destroy = true` to `false` on `cloudflare_dns_record.web` in `dns.tf`, and
-    `WEB_PREVENT_DESTROY = "true"` to `"false"` in `scripts/check_infra.py`. Either line alone
-    fails the check. A later pull request sets both back (`docs/design/cutover-runbook.md`
-    says when).
+  - Web: lifted only by a reviewed pull request whose change, or its undo, has to delete a web
+    record. A later pull request sets it back, as pull request C did after the switch
+    (`docs/design/cutover-runbook.md`). The unlock changes exactly two lines, and either line
+    alone fails the check:
+    - in `dns.tf`, `prevent_destroy = true` becomes `false` on `cloudflare_dns_record.web`.
+    - in `scripts/check_infra.py`, `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
 - `scripts/check_infra.py` fails unless `dns.tf` holds only these three resources. Each has
   its own fixed list, with one literal line per record, its own import block, DNS only,
   automatic TTL and `prevent_destroy` as above. Each list allows only its own kind of

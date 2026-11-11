@@ -221,8 +221,8 @@ ZONE = "kphutt.com"
 # The default test_hostname (variables.tf). Production entries stay off it and out from under it.
 TEST_NAME = "next.kphutt.com"
 # prevent_destroy on the web records (the apex and www). It must match dns.tf. Both stay "true"
-# except during a rollback, which deletes the four AAAA records, so its pull request sets both
-# to "false" first (docs/design/cutover-runbook.md).
+# unless a change, or its undo, has to delete a web record. The pull request for that change
+# sets both to "false", and a later one sets them back (docs/design/cutover-runbook.md).
 # The mail records need no such constant: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
 # The three production resources: the list each one runs over, the record types that list

@@ -1,10 +1,11 @@
 # Cutover runbook: how kphutt.com moved from GitHub Pages to Cloud Run
 
 Status: done. The switch was applied at 04:40 UTC on 2026-11-11, and Cloud Run serves
-`kphutt.com` and `www`. The steps below are the record of how. The rollback still applies,
-but it now has to bring Pages back first ("Rollback", below).
+`kphutt.com` and `www`. The steps below are the record of how. There is no fallback host,
+so problems are fixed on Cloud Run. After a bad deploy, run `rollback.yml` to point traffic
+back at an earlier revision.
 
-Steps 4 and 5 of [the plan](site-move.md). Each step says how to undo it.
+Steps 4 and 5 of [the plan](site-move.md).
 
 Step 4 is code: OpenTofu creates the test name's mapping and DNS record
 (`infra/test-domain.tf`), and that file cannot touch `kphutt.com` or `www`, by design. Step 5
@@ -22,10 +23,11 @@ PROJECT=<project_id>   # from infra/terraform.tfvars
 REGION=<region>
 ```
 
-## The GitHub Pages records, which a rollback restores
+## The GitHub Pages records before the switch
 
-These were the records before the switch, read from public DNS on 2026-11-08. All TTLs are
-300 seconds, so a change, or its undo, reaches resolvers within five minutes.
+These were the records before the switch, read from public DNS on 2026-11-08. All TTLs were
+300 seconds, so a resolver's cached copy of a record expired within five minutes.
+(Cloudflare stores these TTLs as 1, "automatic", which it serves as 300.)
 
 | Name | Type | Value | Proxy |
 |---|---|---|---|
@@ -37,16 +39,15 @@ These were the records before the switch, read from public DNS on 2026-11-08. Al
 
 These four A records and the CNAME pointed at GitHub Pages. The same records, with the same
 Cloudflare ids, are now `local.web_records` in `infra/dns.tf` (resource
-`cloudflare_dns_record.web`), holding Google's addresses. **Putting exactly these values
-back is the DNS half of a rollback** ("Rollback", below). Do not touch the
-MX and TXT records (`local.mail_records`): they are for mail, and their `prevent_destroy`
-never comes off. (Cloudflare stores these TTLs as 1, "automatic", which it serves as 300.)
+`cloudflare_dns_record.web`), holding Google's addresses. The switch left the MX and TXT
+records (`local.mail_records`) alone. They are for mail, and their `prevent_destroy` never
+comes off.
 
 ### Unlocking the web records
 
-A rollback deletes the apex's four AAAA records, and `prevent_destroy` on
-`cloudflare_dns_record.web` refuses that. So a rollback pull request also changes exactly
-these two lines, and nothing else about the guards:
+`prevent_destroy` on `cloudflare_dns_record.web` refuses any plan that deletes a web record.
+So a pull request whose change, or its undo, has to delete one also changes exactly these two
+lines, and nothing else about the guards:
 
 - `infra/dns.tf`, in `resource "cloudflare_dns_record" "web"`: `prevent_destroy = true`
   becomes `prevent_destroy = false`.
@@ -54,8 +55,8 @@ these two lines, and nothing else about the guards:
 
 The check fails if only one of them changes, and it refuses `prevent_destroy = false` on
 `cloudflare_dns_record.mail` whatever `WEB_PREVENT_DESTROY` says. The switch (pull request B,
-below) carried the same unlock, so a rollback in the days after it could be a plain revert. Pull request C (below)
-then set both lines back to `true`. After a rollback has settled, a pull request sets them back again.
+below) put the unlock in its own commit. So during the watch after it, reverting only the
+switch commit could undo the switch. Pull request C (below) then set both lines back to `true`.
 
 ## Step 4: prove it on `next.kphutt.com`
 
@@ -196,8 +197,7 @@ Opened once A is merged and applied (it is built on A). Two commits, both in
 Mail does not change. In this provider (Cloudflare 5.28) a record's type change forces a
 replacement but a content change does not, so this plan deletes nothing.
 
-1. Before merging: describe both mappings once more (A, step 2), and check the Pages
-   certificate's expiry (below). Pick a quiet hour.
+1. Before merging: describe both mappings once more (A, step 2). Pick a quiet hour.
 2. Merge, then plan. **Expected plan:** `4 to add, 5 to change, 0 to destroy`, all in
    `cloudflare_dns_record.web`. To add: `web["apex-aaaa-32"]` to `web["apex-aaaa-38"]`. To
    change, in place: `web["apex-a-108"]` to `web["apex-a-111"]` (content
@@ -215,46 +215,11 @@ replacement but a content change does not, so this plan deletes nothing.
    ```
    The status lags behind. On 2026-11-11 both names served a valid certificate 19 minutes
    after the apply, while both mappings still said `CertificateProvisioned` Unknown. That
-   condition turned true 37 minutes after the apply. A watch that waits on the status alone
-   could roll back a site that already works.
-   **If either name is not served two hours after the apply, roll back** (below), then find
-   out why.
+   condition turned true 37 minutes after the apply. A watch that waited on the status alone
+   could have undone a switch that already worked.
+   The limit was two hours. Had either name not been served by then, the plan was to put
+   back the Pages records and find out why.
 5. Run the checks in "After the switch" below.
-
-**Rollback.** While Pages is still turned on in the repository settings, it keeps serving
-its last deploy, so a rollback needs only steps 3 to 5. Once Pages is turned off, a rollback
-has to bring it back before the records move. Otherwise the records send visitors to a Pages
-site that no longer exists.
-
-1. In the repository's Pages settings, add `kphutt.com` back as the custom domain, and check
-   that the source is still GitHub Actions. Unpublishing keeps the other settings, and the
-   next Pages deploy publishes the site again.
-2. Restore the Pages code from before the pull request that retired Pages ("Retiring Pages",
-   below). These four files hold the Pages deploy job and its checks:
-   `git checkout <its merge commit>^ -- .github/workflows/hugo.yml static/CNAME
-   scripts/check_build.py layouts/partials/extend_head.html`. Restoring only these leaves the
-   docs as they are. Commit the four files in a pull request, merge it, and wait for its Pages
-   deploy to finish.
-3. In `infra/dns.tf`, put `local.web_records` back to the table above. The four A records
-   and `www` take their old values in place, and the four AAAA lines are deleted. Add the
-   two-line unlock ("Unlocking the web records") in the same commit.
-4. Update `tests/dns.tftest.hcl` to match. Its test that the web records are what the
-   mappings ask for no longer holds, so delete it too. `python scripts/check_infra.py` must
-   pass.
-5. Open it as a `fix:` pull request, merge, plan, apply. **Expected plan:**
-   `0 to add, 5 to change, 4 to destroy`, all in `cloudflare_dns_record.web`. Anything else:
-   stop.
-
-The records take effect as resolvers drop the Google ones, within five minutes (TTL 300)
-for most visitors. HTTPS then depends on GitHub's certificate. On 2026-11-11, Pages still
-held one for `kphutt.com`, valid until 2027-02-01. Do not count on it once Pages is turned
-off in the settings. Expect GitHub to issue a new certificate only after the records point
-back, with HTTPS failing until it does. To see what Pages serves before switching, ask one
-of the addresses in the table above for `kphutt.com`:
-
-```bash
-python -c "import ssl,socket; s=ssl.create_default_context().wrap_socket(socket.create_connection(('185.199.108.153',443)),server_hostname='kphutt.com'); print(s.getpeercert()['notAfter'])"
-```
 
 ### After the switch
 
@@ -279,9 +244,7 @@ Once both certificates are ready:
 6. SSL Labs on `kphutt.com` (results not published): expect B, for TLS 1.0 and 1.1, as on
    the test name. Anything worse: compare with the ADR.
 7. Mozilla HTTP Observatory on `kphutt.com`: expect A+.
-8. Over the next few days, run `python scripts/smoke.py https://kphutt.com` again. Pages
-   stays configured until it is turned off after the pull request that retires it ("Retiring
-   Pages"). Until then, a rollback only needs the records.
+8. Over the next few days, run `python scripts/smoke.py https://kphutt.com` again.
 
 Result on 2026-11-11: checks 1 to 3 passed, and both names served Google Trust Services
 certificates valid until 2027-02-09. Plain HTTP answers 302 rather than 301. That still
@@ -293,7 +256,7 @@ After the watch. In `infra/dns.tf`, write the Cloudflare ids of the four AAAA re
 their lines, so a fresh state adopts them rather than creating copies (read each from state:
 `mise exec -- tofu state show 'cloudflare_dns_record.web["apex-aaaa-32"]'`, the `id` line),
 and set both lines from "Unlocking the web records" back to `true`. **Expected plan:**
-`No changes`. A rollback after C carries the same two-line unlock.
+`No changes`.
 
 ## Step 5 under option D: the apex, through a Cloudflare Worker
 
@@ -312,10 +275,6 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
    For `www`: replace its CNAME with a proxied placeholder, and
    add a Single Redirect rule sending `www.kphutt.com/*` to `https://kphutt.com/${1}` with
    a 301, path and query kept.
-   **Rollback:** restore the table above exactly, which also turns the proxy off (the
-   original records are DNS only), and delete the redirect rule. The Worker route then
-   matches nothing that reaches Cloudflare, so it can stay until it is cleaned up. The
-   same certificate caveat as option A applies to the speed of this rollback.
 4. Watch, exactly as in option A, "After the switch", including the `www` redirect.
 5. Lock the web records again, as in option A, pull request C.
 6. Retire Pages, as below.
@@ -323,8 +282,8 @@ apex; delete the `next.kphutt.com` mapping from step 4 if it is no longer used.
 ## Retiring Pages (either option)
 
 After the switch was verified, GitHub Pages was retired in its own pull request. Pages is
-no longer a quick rollback target, because a rollback now has to bring it back first
-("Rollback", under pull request B). That pull request:
+not kept as a fallback ([the ADR](../decisions/0001-custom-domain-on-cloud-run.md), "To
+revisit"). That pull request:
 
 - removed the `deploy` job and the Pages artifact upload from `hugo.yml`.
 - removed the `CNAME` check from `scripts/check_build.py` and deleted `static/CNAME`.

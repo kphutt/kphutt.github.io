@@ -71,10 +71,10 @@ in CI.
   Cloudflare records are DNS only.
   Google issues and renews the certificate. `www` redirects to the apex in one 301, and plain
   `http://` redirects to HTTPS.
-- DNS is hosted at Cloudflare and managed as code. The site and mail records are in `infra/dns.tf`,
-  and the rest sit beside the mappings that need them. Change a record in its file, then plan
-  and apply (`infra/README.md`). A record changed in the Cloudflare dashboard is put back by
-  the next plan and apply.
+- DNS is hosted at Cloudflare and managed as code. The site, mail and other services' records
+  are in `infra/dns.tf`, and the rest sit beside the mappings that need them. Change a record
+  in its file, then plan and apply (`infra/README.md`). A record changed in the Cloudflare
+  dashboard is put back by the next plan and apply.
 - Alerts, not dashboards: an uptime check and a certificate-expiry check email when the site
   is down or a certificate is running out (`infra/uptime.tf`). A billing budget takes the site
   offline once Google reports spending past a limit (`infra/cost-cutoff/`). Google reports
@@ -85,9 +85,8 @@ in CI.
 The built URLs stay correct whatever answers at the edge, because they come from `baseURL`
 rather than from the request.
 
-Do not plan on GitHub Pages as a fallback. Pages cannot set custom response headers, so the
-site would lose the ones in `server/sws.toml`. The rollback in
-`docs/design/cutover-runbook.md` brings Pages back, and it is for an emergency only.
+There is no fallback host, GitHub Pages included. Fix a problem on Cloud Run. After a bad
+deploy, run `rollback.yml` to point traffic back at an earlier revision.
 
 ### Do not turn the DNS proxy on
 Turning on Cloudflare's DNS proxy was evaluated and rejected, first for GitHub Pages and

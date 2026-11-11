@@ -4,9 +4,10 @@
 
   Referrer-Policy, delivered in HTML as well as in the response header (server/sws.toml).
   This is a standard mechanism from the Referrer Policy spec. Note that it is
-  name="referrer", not http-equiv, and not spelled the same as the HTTP header. The header
-  is the one that matters. This copy only keeps the policy when a page is saved or mirrored without its
-  headers. Keep its value the same as the header's.
+  name="referrer", not http-equiv, and not spelled the same as the HTTP header. On an HTML
+  page, this tag sets the policy after the header does, so this tag decides. Both carry the
+  same value, so they agree. The header also covers responses that are not HTML. Keep the two
+  values the same.
 
   strict-origin-when-cross-origin: send the full URL within this site, send only the
   origin to other sites, send nothing when going from HTTPS to HTTP.

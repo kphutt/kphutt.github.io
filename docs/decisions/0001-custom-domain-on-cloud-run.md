@@ -118,9 +118,8 @@ that cap the grade for TLS 1.0 and 1.1 will report it.
 
 **To revisit.** Revisit by 2027-02-10 (three months). This review was once due before GitHub
 Pages was switched off, so Pages could stay a fallback while the TLS question was open. On
-2026-11-10 I decided Pages is not a standing fallback, so it can be switched off now. The
-emergency rollback in the cutover runbook can still restore it. The TLS question stays open,
-and switching Pages off no longer waits on it.
+2026-11-10 I decided Pages is not a fallback, so it can be switched off now. The TLS question
+stays open, and switching Pages off does not wait on it.
 
 **Why not the others, for now**
 
