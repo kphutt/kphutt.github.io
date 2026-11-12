@@ -14,6 +14,7 @@ What it checks, against BASE:
   - every explorables/<slug>/ is in the sitemap, and /<slug> redirects to exactly /<slug>/;
   - every README path is a 404: the READMEs are for the repository and never served;
   - a missing page returns 404 with explorables/404.html, not the server's built-in page;
+  - HTML, CSS, JavaScript and SVG come back compressed when the browser asks for it;
   - every one of those responses carries exactly the headers of the catch-all rule in
     server/explorables.sws.toml, Cache-Control included. The expected
     values are read from that file, so the config is the one place they are written down.
@@ -26,6 +27,7 @@ from __future__ import annotations
 import re
 import sys
 import tomllib
+import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -45,6 +47,26 @@ def expected_headers() -> dict:
         if rule["source"] == "**":
             return dict(rule["headers"])
     sys.exit(f"FAIL: no catch-all '**' header rule in {CONFIG}")
+
+
+# The server compresses every text type (svg counts, by its +xml suffix) but not woff2, and
+# skips bodies under 200 bytes (static-web-server 2.44.1, src/compression.rs and
+# src/mime_ext.rs). So these are the files to check, and the size below which a file is not.
+COMPRESSED_SUFFIXES = (".html", ".css", ".js", ".svg")
+MIN_COMPRESS_SIZE = 200
+
+
+def compressed_paths() -> list[str]:
+    """URL paths of every file the server should compress, read from explorables/."""
+    return sorted("/" + p.relative_to(SOURCE).as_posix() for p in SOURCE.rglob("*")
+                  if p.is_file() and p.suffix in COMPRESSED_SUFFIXES and p.stat().st_size >= MIN_COMPRESS_SIZE
+                  and not any(part.startswith(".") for part in p.relative_to(SOURCE).parts))
+
+
+def content_encoding(url: str) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "site-smoke", "Accept-Encoding": "br, gzip"})
+    with urllib.request.urlopen(request, timeout=20) as r:
+        return r.headers.get("Content-Encoding") or ""
 
 
 def slugs() -> list[str]:
@@ -113,13 +135,20 @@ def main() -> int:
             or '<meta name="robots" content="noindex">' not in text or re.search(r"<style", text, re.I)):
         failures.append("404 response is not explorables/404.html (no title, stylesheet or noindex, or an inline <style>)")
 
+    squeezed = compressed_paths()
+    for path in squeezed:
+        encoding = content_encoding(base + path)
+        if encoding not in ("br", "gzip", "zstd", "deflate"):
+            failures.append(f"{path}: not compressed (Content-Encoding {encoding!r}) though br and gzip were offered")
+
     if failures:
         print(f"Smoke test FAILED against {base} ({len(failures)} problem(s)):")
         for f in failures:
             print(f"  - {f}")
         return 1
     print(f"Smoke test passed against {base}: landing page, stylesheet, robots.txt, sitemap.xml")
-    print(f"and its {len(paths)} URL(s), {len(found)} explorable(s), README paths and the 404 page,")
+    print(f"and its {len(paths)} URL(s), {len(found)} explorable(s), README paths, the 404 page and")
+    print(f"compression of {len(squeezed)} html, css, js and svg file(s),")
     print("all with every header from server/explorables.sws.toml and no X-Robots-Tag.")
     return 0
 
