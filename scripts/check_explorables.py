@@ -17,6 +17,7 @@ rules as the site, and this file reuses check_build.py's checks to apply them:
   - server/explorables.sws.toml sends the full header set, with a Content-Security-Policy
     no weaker than POLICY_FLOOR on any directive, Trusted Types with no policy allowed,
     COEP, X-Frame-Options, HSTS with includeSubDomains and without preload, compression,
+    every server feature explorables do not use written out as off (check_build.py's list),
     and a long but not immutable cache for fonts and favicon.svg;
   - every explorables/<slug>/ has an index.html and a README.md, and no README is in the
     output, where the server would serve it;
@@ -153,9 +154,10 @@ def check_server(failures: list, config: Path = CONFIG, site_config: Path = cb.S
         if not age or int(age.group(1)) < MIN_LONG_CACHE:
             failures.append(f"{name}: no rule for {source!r} with Cache-Control max-age of at least {MIN_LONG_CACHE}")
 
+    # Every server feature explorables do not use is off, the site's redirects included.
+    cb.check_server_settings(failures, config, frozenset({"headers"}))
     general = parsed.get("general", {})
-    for key, want in (("page404", "404.html"), ("directory-listing", False), ("include-hidden", False),
-                      ("compression", True)):
+    for key, want in (("page404", "404.html"), ("include-hidden", False), ("compression", True)):
         if general.get(key) != want:
             failures.append(f"{name}: {key} must be {want!r}, got {general.get(key)!r}")
 

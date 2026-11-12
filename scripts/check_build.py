@@ -347,6 +347,89 @@ def check_server_headers(
     return headers
 
 
+# Server features neither site uses, and the value that turns each off. Each one reads the
+# request, so off is less code an attacker's request can reach. Each must be written out,
+# not left to the default: a value in the config file overrides the binary's default and any
+# SERVER_* environment variable, so nothing outside the file can turn one back on.
+SERVER_FEATURES_OFF = {
+    "health": False,
+    "metrics": False,
+    "maintenance-mode": False,
+    "accept-markdown": False,
+    "cors-allow-origins": "",
+    "basic-auth": "",
+    "page-fallback": "",
+    "directory-listing": False,
+    "directory-listing-download": [],
+    "compression-static": False,
+    "follow-symlinks": False,
+    "tls": False,
+    "http2": False,
+    "https-redirect": False,
+    "use-relative-root": False,
+    "etag": False,
+    "log-remote-address": False,
+    "log-x-real-ip": False,
+    "log-forwarded-for": False,
+}
+
+# Every other [general] key a config may hold. A key in neither list fails: v3 ignores a
+# key it does not know with only a warning, so a misspelled one would silently leave its
+# feature at the default, and a new key is a new feature, which is a decision.
+SERVER_KEYS_ALLOWED = {
+    "host", "port", "root", "log-level", "page404", "security-headers", "cache-control-headers",
+    "compression", "include-hidden", "redirect-trailing-slash", "index-files", "idle-timeout",
+    "text-charset",
+}
+
+
+def server_settings_problems(name: str, config: dict, advanced_allowed: frozenset) -> list:
+    """What in a parsed server config turns on a feature the sites do not use.
+
+    advanced_allowed is the set of [advanced] tables the config may have. The rest
+    (rewrites, virtual-hosts, memory-cache, and redirects where unused) must be absent,
+    which is the only way to turn them off.
+    """
+    problems = []
+    for section in config:
+        if section not in ("general", "advanced"):
+            problems.append(f"{name}: [{section}] is not a section this gate knows")
+    general = config.get("general") or {}
+    for key, off in SERVER_FEATURES_OFF.items():
+        if key not in general:
+            problems.append(f"{name}: {key} must be set to {off!r}, not left to the default")
+        elif general[key] != off or type(general[key]) is not type(off):
+            problems.append(f"{name}: {key} is {general[key]!r}, but must be {off!r}: the site does not use it")
+    for key in general:
+        if key not in SERVER_FEATURES_OFF and key not in SERVER_KEYS_ALLOWED:
+            problems.append(f"{name}: {key} is not a key this gate knows (misspelled, or a feature to decide on)")
+    # Closes a connection that sends or reads nothing for this long (GHSA-2fch-9x9r-mxmv).
+    # 0 turns it off, and leaving it out trusts the default.
+    timeout = general.get("idle-timeout")
+    if type(timeout) is not int or timeout < 1:
+        problems.append(f"{name}: idle-timeout must be set to a whole number of seconds, at least 1, got {timeout!r}")
+    for table in config.get("advanced") or {}:
+        if table not in advanced_allowed:
+            problems.append(f"{name}: [advanced.{table}] turns on a feature the site does not use")
+    return problems
+
+
+def check_server_settings(failures: list, config_path: Path = SERVER_CONFIG,
+                          advanced_allowed: frozenset = frozenset({"headers", "redirects"})) -> None:
+    """Every server feature the site does not use is written out as off.
+
+    The defaults are this site's, which uses one redirect (www to the apex).
+    scripts/check_explorables.py passes its own config, which has no redirects.
+    """
+    name = config_path.relative_to(config_path.parent.parent).as_posix()
+    try:
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        failures.append(f"{name} could not be read: {e}")
+        return
+    failures.extend(server_settings_problems(name, config, advanced_allowed))
+
+
 def check_theme_overrides(failures: list) -> None:
     for name, pinned in OVERRIDDEN_THEME_FILES.items():
         theme_file = THEME / name
@@ -561,6 +644,8 @@ def main() -> int:
 
     # 7. The server's CSP holds the floor, and every other required header is set.
     check_server_headers(failures)
+    # ...and every server feature the site does not use is off.
+    check_server_settings(failures)
 
     # 8. security.txt is present, well formed and unexpired.
     check_security_txt(root, base, failures)
@@ -576,7 +661,7 @@ def main() -> int:
 
     print(f"Build check passed: all URLs use {base}, canonical correct,")
     print(f"{len(EXPECTED_FILES)} expected files present, internal references all resolve,")
-    print("no inline code, CSP at or above the floor in server/sws.toml,")
+    print("no inline code, CSP at or above the floor in server/sws.toml, unused server features off,")
     print("nothing loaded from another origin, security.txt valid, theme overrides in sync.")
     return 0
 
