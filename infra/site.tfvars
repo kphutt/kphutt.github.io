@@ -1,7 +1,7 @@
 # The settings every plan of this site uses. Committed and reviewed like the code, so every
 # machine plans the same thing and nothing lives only on one PC. Nothing here is secret or
 # personal: those values (the alert email, the billing account) are read from 1Password at run
-# time, as listed in infra-apply.toml [secrets]. scripts/apply_infra.py passes this file with
+# time, as listed in infra-apply.toml ([[secret]]). scripts/apply_infra.py passes this file with
 # -var-file. Change a value here in a pull request, then apply (infra/README.md).
 
 project_id           = "kphutt-site" # the site's own GCP project

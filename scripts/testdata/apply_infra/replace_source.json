@@ -1,0 +1,72 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.13.9",
+ "resource_changes": [
+  {
+   "address": "google_cloud_run_v2_service.explorables",
+   "mode": "managed",
+   "type": "google_cloud_run_v2_service",
+   "name": "explorables",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_cloud_run_domain_mapping.explorables",
+   "mode": "managed",
+   "type": "google_cloud_run_domain_mapping",
+   "name": "explorables",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "cloudflare_dns_record.services[\"explorables\"]",
+   "mode": "managed",
+   "type": "cloudflare_dns_record",
+   "name": "services",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_storage_bucket_object.cost_cutoff_source",
+   "mode": "managed",
+   "type": "google_storage_bucket_object",
+   "name": "cost_cutoff_source",
+   "change": {
+    "actions": [
+     "delete",
+     "create"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_cloudfunctions2_function.cost_cutoff",
+   "mode": "managed",
+   "type": "google_cloudfunctions2_function",
+   "name": "cost_cutoff",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "before": null,
+    "after": null
+   }
+  }
+ ]
+}

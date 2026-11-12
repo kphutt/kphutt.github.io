@@ -1,0 +1,41 @@
+# Settings for scripts/apply_infra.py, the one command that plans, checks and applies infra/.
+# The script is the same in every repository that uses it; everything that differs is here.
+# See infra/README.md, "Applying".
+
+infra_dir = "infra"
+
+# Committed variable files, relative to infra_dir, passed to every plan with -var-file.
+var_files = ["site.tfvars"]
+
+# --deploy starts this workflow on deploy_ref, to replace a new service's placeholder image.
+deploy_workflow = "hugo.yml"
+deploy_ref = "main"
+
+# The state backend (versions.tf leaves it partial). seed.py project creates the bucket.
+[backend]
+bucket = "kphutt-site-tofu-state"
+prefix = "site"
+
+# Read from 1Password in one `op inject` call: one prompt per run. A variable already set in
+# the environment is used instead. These are references, never values.
+[[secret]]
+env = "CLOUDFLARE_API_TOKEN"
+ref = "op://Private/Cloudflare kphutt-site DNS token/credential"
+
+[[secret]]
+env = "TF_VAR_alert_email"
+ref = "op://Private/kphutt-site tofu/alert_email"
+
+[[secret]]
+env = "TF_VAR_billing_account"
+ref = "op://Private/kphutt-site tofu/billing_account"
+
+# Steps --run NAME may run after the apply, from the repository root, through `mise exec`.
+[steps]
+seed-vars = ["python", "infra/seed.py", "vars", "--apply"]
+
+# --check-live waits for every domain mapping in the project (project and region come from
+# var_files) to be Ready with a valid certificate, then runs these smoke tests against them.
+[live.smoke]
+"kphutt.com" = "scripts/smoke.py"
+"explorables.kphutt.com" = "scripts/smoke_explorables.py"

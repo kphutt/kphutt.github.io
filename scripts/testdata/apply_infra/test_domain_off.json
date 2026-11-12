@@ -1,0 +1,84 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.13.9",
+ "resource_changes": [
+  {
+   "address": "cloudflare_dns_record.verification[0]",
+   "mode": "managed",
+   "type": "cloudflare_dns_record",
+   "name": "verification",
+   "change": {
+    "actions": [
+     "delete"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_site_verification_web_resource.test[0]",
+   "mode": "managed",
+   "type": "google_site_verification_web_resource",
+   "name": "test",
+   "change": {
+    "actions": [
+     "delete"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_cloud_run_domain_mapping.test[0]",
+   "mode": "managed",
+   "type": "google_cloud_run_domain_mapping",
+   "name": "test",
+   "change": {
+    "actions": [
+     "delete"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "cloudflare_dns_record.test[\"a0\"]",
+   "mode": "managed",
+   "type": "cloudflare_dns_record",
+   "name": "test",
+   "change": {
+    "actions": [
+     "delete"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "cloudflare_dns_record.test[\"aaaa0\"]",
+   "mode": "managed",
+   "type": "cloudflare_dns_record",
+   "name": "test",
+   "change": {
+    "actions": [
+     "delete"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "cloudflare_dns_record.web[0]",
+   "mode": "managed",
+   "type": "cloudflare_dns_record",
+   "name": "web",
+   "change": {
+    "actions": [
+     "no-op"
+    ],
+    "before": null,
+    "after": null
+   }
+  }
+ ]
+}
