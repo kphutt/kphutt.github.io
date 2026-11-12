@@ -14,10 +14,10 @@
 #     record turns it off here and in scripts/check_infra.py, in the same review.
 #   - cloudflare_dns_record.mail: MX, SPF, DKIM and DMARC. Its prevent_destroy never comes off;
 #     scripts/check_infra.py has no setting that allows it.
-#   - cloudflare_dns_record.services: records for other services that run under kphutt.com,
-#     each managed by another project. Only a CNAME to ghs.googlehosted.com, named one label
-#     under the zone. Its prevent_destroy never comes off either. The mapping and certificate
-#     for each live in that service's own project, not here.
+#   - cloudflare_dns_record.services: records for other services that run under kphutt.com.
+#     Only a CNAME to ghs.googlehosted.com, named one label under the zone. Its prevent_destroy
+#     never comes off either. The mapping and certificate for each live with that service:
+#     explorables' in explorables.tf, the others' in their own projects.
 #
 # The test name's records (next.kphutt.com and its ownership CNAME) are not here: they belong
 # to test-domain.tf, and scripts/check_infra.py keeps the two files apart.
@@ -55,10 +55,13 @@ locals {
   # Other services' records. Only CNAMEs to ghs.googlehosted.com, named one label under
   # kphutt.com. Never the apex, www, next or an underscore name (scripts/check_infra.py).
   # lodestar.kphutt.com is the lodestar service's Cloud Run domain mapping, read from that
-  # mapping's status. id null: a new record, created by the apply. The pull request after
-  # the apply writes in the id Cloudflare gave it.
+  # mapping's status. explorables.kphutt.com is this project's second service: exactly what
+  # its mapping in explorables.tf asks for (tests/dns.tftest.hcl checks they match). id null:
+  # a new record, created by the apply. The pull request after the apply writes in the id
+  # Cloudflare gave it.
   service_records = {
-    "lodestar" = { id = null, name = "lodestar.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
+    "lodestar"    = { id = null, name = "lodestar.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
+    "explorables" = { id = null, name = "explorables.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
   # Email. Only MX and TXT records.

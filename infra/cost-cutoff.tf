@@ -8,7 +8,7 @@
 #                                          function site-cost-cutoff (cost-cutoff/main.py)
 #                                                                   │ costAmount >= cutoff
 #                                                                   ▼
-#                                          site's ingress := internal only
+#                                  ingress := internal only, on the site and on explorables
 #
 # Everything here stays inside free allowances: the budget, the topic and the function's few
 # thousand calls a month cost nothing, the source bucket holds one small zip in a free-tier
@@ -26,8 +26,12 @@ variable "cost_cutoff_usd" {
 }
 
 locals {
-  # The function turns this service off, and nothing else.
-  cutoff_target = "projects/${var.project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.site.name}"
+  # The function turns these services off, and nothing else. The budget watches the whole
+  # project, so every public service in it is on this list: the site and explorables.
+  cutoff_targets = [
+    "projects/${var.project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.site.name}",
+    "projects/${var.project_id}/locations/${var.region}/services/${google_cloud_run_v2_service.explorables.name}",
+  ]
 }
 
 # ── The budget and its topic ─────────────────────────────────────────────────────────────
@@ -76,7 +80,8 @@ resource "google_billing_budget" "cutoff" {
 
 # ── Identities ───────────────────────────────────────────────────────────────────────────
 #   cutoff  what the function runs as, and what Eventarc uses to call it. It can read and
-#           update the one site service, through a custom role of three permissions.
+#           update the site's service and the explorables service, through a custom role of
+#           three permissions bound on each.
 #   build   what Cloud Build runs as when it packages the function. It can write logs,
 #           push to the function's own image repository and read the function's source.
 
@@ -96,7 +101,7 @@ resource "google_service_account" "cost_cutoff_build" {
 resource "google_project_iam_custom_role" "cost_cutoff" {
   role_id     = "siteCostCutoff"
   title       = "Site cost cutoff"
-  description = "Read and update one Cloud Run service. Bound on the site service only."
+  description = "Read and update one Cloud Run service. Bound on the site and explorables services only."
   permissions = ["run.services.get", "run.services.update", "run.operations.get"]
 }
 
@@ -107,8 +112,15 @@ resource "google_cloud_run_v2_service_iam_member" "cost_cutoff_updates_site" {
   member   = "serviceAccount:${google_service_account.cost_cutoff.email}"
 }
 
-# Cloud Run asks for actAs on a service's identity when that service is updated. The site
-# runs as the runtime account, which holds no permissions at all (identities.tf), so acting
+resource "google_cloud_run_v2_service_iam_member" "cost_cutoff_updates_explorables" {
+  name     = google_cloud_run_v2_service.explorables.name
+  location = google_cloud_run_v2_service.explorables.location
+  role     = google_project_iam_custom_role.cost_cutoff.name
+  member   = "serviceAccount:${google_service_account.cost_cutoff.email}"
+}
+
+# Cloud Run asks for actAs on a service's identity when that service is updated. Both
+# services run as the runtime account, which holds no permissions at all (identities.tf), so acting
 # as it reaches nothing.
 resource "google_service_account_iam_member" "cost_cutoff_acts_as_runtime" {
   service_account_id = google_service_account.runtime.name
@@ -218,7 +230,7 @@ resource "google_artifact_registry_repository" "cost_cutoff" {
 resource "google_cloudfunctions2_function" "cost_cutoff" {
   name        = "site-cost-cutoff"
   location    = var.region
-  description = "Turns the site off when the month's actual spend reaches the cutoff."
+  description = "Turns the site and explorables off when the month's actual spend reaches the cutoff."
 
   build_config {
     runtime           = "python313"
@@ -243,7 +255,7 @@ resource "google_cloudfunctions2_function" "cost_cutoff" {
     all_traffic_on_latest_revision = true
     service_account_email          = google_service_account.cost_cutoff.email
     environment_variables = {
-      SERVICE    = local.cutoff_target
+      SERVICES   = join(",", local.cutoff_targets)
       CUTOFF_USD = tostring(var.cost_cutoff_usd)
     }
   }
@@ -266,6 +278,9 @@ resource "google_cloudfunctions2_function" "cost_cutoff" {
 }
 
 output "cost_cutoff_reopen_command" {
-  description = "Reopens the site after the cost cutoff has turned it off. Read cost-cutoff.md first."
-  value       = "gcloud run services update ${google_cloud_run_v2_service.site.name} --region=${var.region} --project=${var.project_id} --ingress=all"
+  description = "Reopens the site and explorables after the cost cutoff has turned them off. Read cost-cutoff.md first."
+  value = join(" && ", [
+    for s in [google_cloud_run_v2_service.site.name, google_cloud_run_v2_service.explorables.name] :
+    "gcloud run services update ${s} --region=${var.region} --project=${var.project_id} --ingress=all"
+  ])
 }

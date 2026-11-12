@@ -87,6 +87,22 @@ override_resource {
   }
 }
 
+# explorables.kphutt.com's mapping (explorables.tf) asks for one CNAME, as www does.
+# tests/explorables.tftest.hcl tests it; here it only has to plan.
+override_resource {
+  target = google_cloud_run_domain_mapping.explorables
+  values = {
+    status = [{
+      conditions          = []
+      observed_generation = 1
+      mapped_route_name   = "explorables"
+      resource_records = [
+        { name = "explorables", type = "CNAME", rrdata = "ghs.googlehosted.com." },
+      ]
+    }]
+  }
+}
+
 variables {
   apex_verification_expected = "abc123def gv-mockedapex.dv.googlehosted.com"
   project_id                 = "test-site-project"
@@ -141,12 +157,12 @@ run "trips_on_actual_spend_at_the_cutoff" {
   }
 }
 
-run "targets_only_the_site_service" {
+run "targets_only_the_public_services" {
   command = plan
 
   assert {
-    condition     = google_cloudfunctions2_function.cost_cutoff.service_config[0].environment_variables["SERVICE"] == "projects/test-site-project/locations/us-west1/services/site"
-    error_message = "The function must target the site service."
+    condition     = google_cloudfunctions2_function.cost_cutoff.service_config[0].environment_variables["SERVICES"] == "projects/test-site-project/locations/us-west1/services/site,projects/test-site-project/locations/us-west1/services/explorables"
+    error_message = "The function must target the site and explorables services, and nothing else."
   }
   assert {
     condition     = google_cloudfunctions2_function.cost_cutoff.build_config[0].entry_point == "handle"

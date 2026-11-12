@@ -12,9 +12,12 @@
 # measures the final host's certificate. Every name must end at 200. The checks fetch
 # /robots.txt, a few hundred bytes, so they add almost no outbound data.
 #
+# explorables.kphutt.com (explorables.tf) is watched too, by its own check of its landing
+# page: it has no robots.txt, on purpose. Both alerts cover it.
+#
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
-# region counts as one execution per period. 2 names x 3 regions x one check per 15 minutes
-# is about 17,000 a month. Alert policies on uptime metrics are not charged, even after
+# region counts as one execution per period. 3 names x 3 regions x one check per 15 minutes
+# is about 26,000 a month. Alert policies on uptime metrics are not charged, even after
 # Google starts charging for alerting (not before 2027-09-01). Source:
 # https://cloud.google.com/stackdriver/pricing (uptime-check execution, alerting).
 
@@ -48,7 +51,10 @@ locals {
   # network. Keep it at 3 or more or the down alert can never fire.
   uptime_regions = ["USA_OREGON", "USA_VIRGINIA", "EUROPE"]
 
-  uptime_check_filter = join(" OR ", [for c in google_monitoring_uptime_check_config.site : "metric.label.check_id = \"${c.uptime_check_id}\""])
+  uptime_check_filter = join(" OR ", [
+    for c in concat(values(google_monitoring_uptime_check_config.site), [google_monitoring_uptime_check_config.explorables]) :
+    "metric.label.check_id = \"${c.uptime_check_id}\""
+  ])
 }
 
 resource "google_monitoring_uptime_check_config" "site" {
@@ -75,6 +81,35 @@ resource "google_monitoring_uptime_check_config" "site" {
     labels = {
       project_id = var.project_id
       host       = each.value
+    }
+  }
+
+  selected_regions = local.uptime_regions
+}
+
+# The landing page, a few hundred bytes. It is the only page that always exists.
+resource "google_monitoring_uptime_check_config" "explorables" {
+  display_name = "Site explorables.kphutt.com"
+  period       = "900s"
+  timeout      = "10s"
+
+  http_check {
+    path           = "/"
+    port           = 443
+    use_ssl        = true
+    validate_ssl   = true
+    request_method = "GET"
+
+    accepted_response_status_codes {
+      status_value = 200
+    }
+  }
+
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = var.project_id
+      host       = google_cloud_run_domain_mapping.explorables.name
     }
   }
 
@@ -120,10 +155,11 @@ resource "google_monitoring_alert_policy" "site_down" {
          - kphutt.com A: 216.239.32.21, 216.239.34.21, 216.239.36.21, 216.239.38.21
          - kphutt.com AAAA: 2001:4860:4802:32::15, 2001:4860:4802:34::15, 2001:4860:4802:36::15, 2001:4860:4802:38::15
          - www.kphutt.com CNAME: ghs.googlehosted.com
+         - explorables.kphutt.com CNAME: ghs.googlehosted.com
 
          If they differ, compare with infra/dns.tf (infra/README.md, "Production DNS").
       2. Check the Cloudflare records are DNS-only (not proxied). See AGENTS.md, "Do not turn the DNS proxy on".
-      3. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}`. The status can lag behind what is served, so trust a real HTTPS request over it. For a bad deploy, use the `rollback.yml` workflow.
+      3. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}` (for explorables.kphutt.com, the service `${google_cloud_run_v2_service.explorables.name}`). The status can lag behind what is served, so trust a real HTTPS request over it. For a bad deploy, use the `rollback.yml` workflow.
       4. If the cost cutoff has turned the site off (cost-cutoff.md), this alert is expected. Reopen the site per that doc.
     EOT
   }
@@ -164,9 +200,9 @@ resource "google_monitoring_alert_policy" "cert_expiring" {
       What it means: the certificate served for the host named in this alert has fewer than ${var.uptime_cert_expiry_days} days left. For www, that is kphutt.com's certificate, because the check follows www's redirect to kphutt.com. This alert does not cover www's own certificate. If it expires before Google replaces it, browsers will refuse the site.
 
       What to do:
-      1. Check that public DNS still points at Google, with the records in infra/dns.tf. kphutt.com should have four A and four AAAA records, and www should be a CNAME to ghs.googlehosted.com.
+      1. Check that public DNS still points at Google, with the records in infra/dns.tf. kphutt.com should have four A and four AAAA records, and www and explorables should each be a CNAME to ghs.googlehosted.com.
       2. Also check that the records are DNS-only (not proxied). Google renews only while DNS points at it and is not proxied. See AGENTS.md, "Do not turn the DNS proxy on".
-      3. Check the mapping for kphutt.com (`gcloud beta run domain-mappings describe --domain kphutt.com --region ${var.region} --project ${var.project_id}`), and the same for www.kphutt.com. While the certificate is pending, its CertificateProvisioned condition gives Google's reason.
+      3. Check the mapping for kphutt.com (`gcloud beta run domain-mappings describe --domain kphutt.com --region ${var.region} --project ${var.project_id}`), and the same for www.kphutt.com and explorables.kphutt.com. While the certificate is pending, its CertificateProvisioned condition gives Google's reason.
       4. If DNS and the proxy are right but the certificate is still not replaced with a week left, recreate the mapping. First, in a reviewed pull request, lift its `prevent_destroy` and the matching rule in scripts/check_infra.py. The site is unreachable at that name from the deletion until Google issues the new certificate.
     EOT
   }

@@ -4,7 +4,7 @@
 Runs in CI (the `infra` job in .github/workflows/hugo.yml) and at pre-push when infra/
 changed (.pre-commit-config.yaml). First three static rules: the deploy workflows only use
 registry commands the deployer's role allows, they never name a revision (so OpenTofu can
-change the service template after a deploy), and Cloudflare records are held to two
+change either service's template after a deploy), and Cloudflare records are held to two
 files: the production records (the live site at kphutt.com and www, and email) only in
 infra/dns.tf, with every value written out, and the test name's records only under the test
 name. Then the same four commands in both places:
@@ -113,9 +113,14 @@ def check_deployer_commands() -> bool:
 # run deploy`) writes the name into the template. If cloud-run.tf ignored that field, its
 # next template change would resend the serving revision's name and Cloud Run would refuse
 # it with a 409. If it did not ignore it, every plan after a deploy would show a change.
-# So the deploy names nothing, and cloud-run.tf does not ignore the field.
+# So the deploy names nothing, and cloud-run.tf does not ignore the field. The same holds for
+# the explorables service: its deploy job is in hugo.yml, scanned below, and its file is in
+# SERVICE_FILES.
 NAMES_REVISION = re.compile(r"gcloud\s+(?:(?:alpha|beta)\s+)?run\s+(?:services\s+update|deploy)\s(?=.*--(?:tag|revision-suffix)\b)")
 REVISION_IGNORED = re.compile(r"^[^#\n]*template\[0\]\.revision\b", re.M)
+EXPLORABLES_TF = "explorables.tf"
+# Every Cloud Run service's file. A deploy writes to each, so none may ignore the field.
+SERVICE_FILES = ("cloud-run.tf", EXPLORABLES_TF)
 
 
 def check_revision_naming() -> bool:
@@ -129,9 +134,14 @@ def check_revision_naming() -> bool:
             if not line.lstrip().startswith("#") and NAMES_REVISION.search(line):
                 print(f"{name}: a deploy names the revision (--tag or --revision-suffix): {line.strip()}")
                 ok = False
-    if REVISION_IGNORED.search((INFRA / "cloud-run.tf").read_text(encoding="utf-8")):
-        print("infra/cloud-run.tf: ignore_changes lists template[0].revision")
-        ok = False
+    for service_file in SERVICE_FILES:
+        path = INFRA / service_file
+        if not path.is_file():
+            print(f"infra/{service_file}: missing")
+            ok = False
+        elif REVISION_IGNORED.search(path.read_text(encoding="utf-8")):
+            print(f"infra/{service_file}: ignore_changes lists template[0].revision")
+            ok = False
     return ok
 
 
@@ -231,7 +241,7 @@ def _ipv6(v: str) -> bool:
 
 
 # Cloud Run domain mappings. The test name's is in test-domain.tf. The live names' are in
-# site-domain.tf (SITE_DOMAIN_FILE) and nowhere else. Each is named by the expression below,
+# site-domain.tf (SITE_DOMAIN_FILE) and nowhere else, and explorables' in explorables.tf. Each is named by the expression below,
 # carries prevent_destroy (once DNS points at a mapping, deleting it takes its name off the
 # internet) and a postcondition that compares Google's request with its fixed list, and each
 # list holds only the kind of record Google asks for that name.
@@ -243,6 +253,9 @@ MAPPINGS = {
              "allowed": {"A": _ipv4, "AAAA": _ipv6}},
     "www": {"file": SITE_DOMAIN_FILE, "name": '"www.${local.zone_name}"', "list": "www_mapping_records",
             "allowed": {"CNAME": lambda v: v == "ghs.googlehosted.com"}},
+    "explorables": {"file": EXPLORABLES_TF, "name": '"explorables.${local.zone_name}"',
+                    "list": "explorables_mapping_records",
+                    "allowed": {"CNAME": lambda v: v == "ghs.googlehosted.com"}},
 }
 PRODUCTION_FILE = "dns.tf"
 ZONE = "kphutt.com"
