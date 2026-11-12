@@ -51,8 +51,8 @@ per clone, or there is no local gate at all and nothing says so:
 python -m pre_commit install --hook-type pre-commit --hook-type pre-push
 ```
 
-The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's site and
-explorables build commands verbatim and adds the preconditions CI gets from a fresh checkout:
+The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's site
+build commands verbatim and adds the preconditions CI gets from a fresh checkout:
 the pinned Hugo, and an empty output directory. `public/` is gitignored and Hugo does not purge
 files whose content is gone, so a working tree accumulates stale pages that fail the check
 locally and exist nowhere in CI.
@@ -67,8 +67,7 @@ locally and exist nowhere in CI.
   `scripts/check_build.py`. It then builds the container, smoke-tests it, and deploys it to
   Cloud Run blue-green. A new revision starts at 0% traffic, is smoke-tested at its own URL,
   and is then promoted by exact name. If the smoke test fails, the old revision keeps serving.
-  `rollback.yml` points traffic back at an earlier revision of the service it is given
-  (`site` or `explorables`).
+  `rollback.yml` points the site's traffic back at an earlier revision.
 - The deploy is keyless. GitHub's OIDC token is exchanged for a short-lived Google identity
   (Workload Identity Federation). No service account key is created. Only the `cloud-run`
   environment on `main` can use it (`infra/identities.tf`).
@@ -91,7 +90,7 @@ The built URLs stay correct whatever answers at the edge, because they come from
 rather than from the request.
 
 There is no fallback host, GitHub Pages included. Fix a problem on Cloud Run. After a bad
-deploy, run `rollback.yml` with service `site` to point traffic back at an earlier revision.
+deploy, run `rollback.yml` with the revision's name to point traffic back at it.
 
 ### Do not turn the DNS proxy on
 Turning on Cloudflare's DNS proxy was evaluated and rejected, first for GitHub Pages and
@@ -128,8 +127,8 @@ the page; the gate accepts that exact URL and nothing broader.
 `scripts/check_build.py` is the gate. It fails the build if inline code comes back, or if the
 header policy in `server/sws.toml` is weaker than its floor on any directive. It also fails if a
 required header goes missing or the page loads anything from another origin. And it fails if
-the theme changes a file those copies were made from. It fails, for both servers, if a
-static-web-server feature the sites do not use is turned on, left to its default, or its key
+the theme changes a file those copies were made from. It fails if a
+static-web-server feature the site does not use is turned on, left to its default, or its key
 misspelled (`SERVER_FEATURES_OFF` in `scripts/check_build.py`). `scripts/smoke.py` checks that a
 running server sends exactly those headers.
 
