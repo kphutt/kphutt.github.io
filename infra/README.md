@@ -289,6 +289,9 @@ Turning it on, in this order:
 2. `mise exec -- python infra/seed.py vars --apply` sets `EXPLORABLES_SERVICE`. Until then
    the `explorables-deploy` job skips itself, and the site's deploy is unaffected either way.
 3. The next merge to `main`, or a manual run of `hugo.yml`, deploys the explorables image.
+   After that, `rollback.yml` with service `explorables` rolls back a bad deploy, and with
+   service `site` the main site. It fails, changing nothing, while `EXPLORABLES_SERVICE` is
+   unset.
 4. A pull request writes the new record's Cloudflare id into `dns.tf` in place of `null`.
 
 ## Alerts (`uptime.tf`)

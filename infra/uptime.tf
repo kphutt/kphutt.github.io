@@ -160,7 +160,7 @@ resource "google_monitoring_alert_policy" "site_down" {
 
          If they differ, compare with infra/dns.tf (infra/README.md, "Production DNS").
       2. Check the Cloudflare records are DNS-only (not proxied). See AGENTS.md, "Do not turn the DNS proxy on".
-      3. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}` (for explorables.kphutt.com, the service `${google_cloud_run_v2_service.explorables.name}`). The status can lag behind what is served, so trust a real HTTPS request over it. For a bad deploy, use the `rollback.yml` workflow.
+      3. Check the domain mapping status (`gcloud beta run domain-mappings describe --domain <name> --region ${var.region} --project ${var.project_id}`) and the service `${var.service_name}` (for explorables.kphutt.com, the service `${google_cloud_run_v2_service.explorables.name}`). The status can lag behind what is served, so trust a real HTTPS request over it. For a bad deploy, run the `rollback.yml` workflow with service `site` for kphutt.com or www, or `explorables` for explorables.kphutt.com.
       4. If the cost cutoff has turned the site off (cost-cutoff.md), this alert is expected. Reopen the site per that doc.
     EOT
   }

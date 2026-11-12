@@ -68,7 +68,8 @@ locally and exist nowhere in CI.
   `scripts/check_build.py`. It then builds the container, smoke-tests it, and deploys it to
   Cloud Run blue-green. A new revision starts at 0% traffic, is smoke-tested at its own URL,
   and is then promoted by exact name. If the smoke test fails, the old revision keeps serving.
-  `rollback.yml` points traffic back at an earlier revision.
+  `rollback.yml` points traffic back at an earlier revision of the service it is given
+  (`site` or `explorables`).
 - The deploy is keyless. GitHub's OIDC token is exchanged for a short-lived Google identity
   (Workload Identity Federation). No service account key is created. Only the `cloud-run`
   environment on `main` can use it (`infra/identities.tf`).
@@ -91,7 +92,7 @@ The built URLs stay correct whatever answers at the edge, because they come from
 rather than from the request.
 
 There is no fallback host, GitHub Pages included. Fix a problem on Cloud Run. After a bad
-deploy, run `rollback.yml` to point traffic back at an earlier revision.
+deploy, run `rollback.yml` with service `site` to point traffic back at an earlier revision.
 
 ### Do not turn the DNS proxy on
 Turning on Cloudflare's DNS proxy was evaluated and rejected, first for GitHub Pages and
@@ -187,7 +188,9 @@ also carries `Cross-Origin-Embedder-Policy: require-corp`, `X-Frame-Options: DEN
 blue-green like the site's, but its own job and queue, so it never blocks the site's. It
 creates the candidate revision without a tag and tags it afterwards. That keeps the
 service's template free of a revision name for a later `tofu apply` to resend
-(`infra/explorables.tf` explains).
+(`infra/explorables.tf` explains). To roll back a bad explorables deploy, run `rollback.yml`
+with service `explorables` and the revision's name. It smoke-tests that revision with
+`scripts/smoke_explorables.py` before moving any traffic, and never touches the site.
 
 ## Git attribution
 
