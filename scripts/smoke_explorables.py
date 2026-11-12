@@ -50,8 +50,8 @@ def expected_headers() -> dict:
 
 
 # The server compresses every text type (svg counts, by its +xml suffix) but not woff2, and
-# skips bodies under 200 bytes (static-web-server 2.44.1, src/compression.rs and
-# src/mime_ext.rs). So these are the files to check, and the size below which a file is not.
+# skips bodies under 200 bytes (static-web-server 3.0.0-beta.2, src/compression.rs and
+# src/exts/mime.rs). So these are the files to check, and the size below which a file is not.
 COMPRESSED_SUFFIXES = (".html", ".css", ".js", ".svg")
 MIN_COMPRESS_SIZE = 200
 
