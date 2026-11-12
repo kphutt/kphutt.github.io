@@ -16,13 +16,16 @@ Personal website for Karsten Huttelmaier. Hugo static site, served from Cloud Ru
     them after review, and CI only deploys images. See `infra/README.md`.
   - `scripts/smoke.py`: run against a container or a Cloud Run candidate before it gets
     traffic.
+- Explorables: standalone interactive pages in `explorables/`, served from
+  `explorables.kphutt.com` by a second Cloud Run service. See "Explorables" below.
 
 ## Key Decisions
 - Single homepage does the heavy lifting; posts accrete under `content/posts/`
   (there is no `notes/` section — an earlier one was removed, and stale `public/notes/`
   output outlived it in working trees by four months)
 - PaperMod theme with custom homepage layout override (`layouts/index.html`)
-- No JavaScript at all, inline or otherwise. No build tools beyond Hugo.
+- No JavaScript at all on `kphutt.com`, inline or otherwise. No build tools beyond Hugo.
+  Interactive pages go to `explorables/`, on their own origin.
 - Content is markdown. Structure is in the content, not the theme.
 
 ## Commands
@@ -33,6 +36,8 @@ mise exec -- hugo                 # Build to /public
 python scripts/local_verify.py    # Run the CI build gate locally
 python scripts/check_infra.py     # Check infra/ offline (fmt, validate, plan tests)
 python scripts/smoke.py URL       # Smoke-test a running copy (pages, feeds, headers)
+python scripts/build_explorables.py && python scripts/check_explorables.py public-explorables
+python scripts/smoke_explorables.py URL   # Smoke-test a running explorables copy
 ```
 
 Hugo is pinned in `mise.toml` and must match `HUGO_VERSION` in the workflow. They are the
@@ -47,9 +52,9 @@ per clone, or there is no local gate at all and nothing says so:
 python -m pre_commit install --hook-type pre-commit --hook-type pre-push
 ```
 
-The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's two build commands
-verbatim and adds the preconditions CI gets from a fresh checkout: the pinned Hugo, and an
-empty output directory. `public/` is gitignored and Hugo does not purge files whose content is
+The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's site and
+explorables build commands verbatim and adds the preconditions CI gets from a fresh checkout:
+the pinned Hugo, and an empty output directory. `public/` is gitignored and Hugo does not purge files whose content is
 gone, so a working tree accumulates stale pages that fail the check locally and exist nowhere
 in CI.
 
@@ -140,6 +145,37 @@ CSP copy would be a second policy to keep in step. Add or change a header in `se
   both `pki.goog` and `letsencrypt.org`). A mismatch would fail with the same silent, delayed
   failure as above.
   DNSSEC is enabled, which closes most of the path CAA would defend.
+
+## Explorables
+Standalone interactive pages: JavaScript, SVG, toggles and static files, nothing that runs on
+a server. They are served from `https://explorables.kphutt.com/<slug>/`.
+
+**Why a separate origin.** `kphutt.com`'s policy is `script-src 'none'`, and
+`scripts/check_build.py` fails any script. Putting script under a path on `kphutt.com` would
+share its origin and mean loosening that gate. A subdomain is a separate origin to the
+browser, so the main site keeps its policy and gate unchanged, and nothing an explorable runs
+can reach the main site's pages.
+
+**Adding one:** a folder `explorables/<slug>/` with an `index.html`, its own script, style,
+image and font files, and a `README.md` (`explorables/README.md` has the steps). READMEs are
+for the repository: `scripts/build_explorables.py` leaves them out of the image.
+`scripts/check_explorables.py` fails the build if a page has inline code, loads anything
+from another origin, or lacks `<meta name="robots" content="noindex, nofollow">`; if a
+folder has no README or index; if a README or dot-file would be served; or if the headers
+in `server/explorables.sws.toml` weaken.
+
+**The policy** is the site's with three changes: `script-src 'self'`, `font-src 'self'`, and
+`require-trusted-types-for 'script'`. Still no `'unsafe-inline'`, hashes or nonces, and no
+`connect-src`, so pages make no network calls. `X-Robots-Tag: noindex, nofollow` and
+`Referrer-Policy: no-referrer` go on every response. There is no `robots.txt` Disallow on
+purpose: a crawler that may not fetch a page never sees its noindex.
+
+**Deploy:** `explorables.Dockerfile` (same pinned base image as the site), and the
+`explorables`, `explorables-image` and `explorables-deploy` jobs in `hugo.yml`. The deploy is
+blue-green like the site's, but its own job and queue, so it never blocks the site's. It
+creates the candidate revision without a tag and tags it afterwards. That keeps the
+service's template free of a revision name for a later `tofu apply` to resend
+(`infra/explorables.tf` explains).
 
 ## Git attribution
 
