@@ -48,6 +48,19 @@ resource "google_cloud_run_v2_service" "site" {
         startup_cpu_boost = true
       }
 
+      # Ready once the port opens. The deploy's smoke test checks every page before a revision
+      # gets traffic, so a page check here only adds wait. Leaving the block out would keep the
+      # last probe the API reported, so it is set explicitly.
+      startup_probe {
+        tcp_socket {
+          port = 8080
+        }
+        initial_delay_seconds = 0
+        timeout_seconds       = 1
+        period_seconds        = 1
+        failure_threshold     = 10
+      }
+
     }
   }
 
