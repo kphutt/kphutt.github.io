@@ -103,16 +103,21 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 
 Only after step 4 is recorded and the decision is made. Three pull requests (A, B, C), applied
 in order once each is merged, from the repository root with the Site Verification scope signed
-in (`infra/README.md`, "The test name", step 3). Each plan is read before it is applied:
+in (`infra/README.md`, "The test name", step 3). Read each plan with `--plan-only` first:
 
 ```bash
 python scripts/apply_infra.py --plan-only
 python scripts/apply_infra.py
 ```
 
+The second command plans again and applies that new plan without asking. Deletes, replaces
+and forgets are still refused unless named, but a create or update that was not in the plan
+you read is applied, so run it right after reading, with nothing merged in between.
+
 A plan that deletes or replaces anything, such as an undo below, is refused unless the
-command names each address it may delete (`--allow-delete cloudflare_dns_record.web`, for
-example), as in `infra/README.md`, "Applying".
+command names it with `--allow-delete` or `--allow-replace` (`--allow-delete
+cloudflare_dns_record.web` allows every instance of that resource), as in `infra/README.md`,
+"Applying".
 
 ### The certificate gap: read this before choosing a time
 
