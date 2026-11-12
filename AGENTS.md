@@ -212,8 +212,8 @@ service's template free of a revision name for a later `tofu apply` to resend
 with service `explorables` and the revision's name. It smoke-tests that revision with
 `scripts/smoke_explorables.py` before moving any traffic, and never touches the site.
 
-**Moving to their own repository.** Explorables are moving to `kphutt/explorables`, which
-needs npm tooling this repository does not allow. `infra/explorables-repo.tf` gives that
+**Moving to their own repository.** Explorables are moving to their own public repository,
+`kphutt/explorables`. `infra/explorables-repo.tf` gives that
 repository its own deployer, scoped to the explorables service and its own image repository
 (`infra/README.md`, "The explorables repository"). The `explorables/` folder and its jobs here
 stay until that repository has deployed once, and are then removed.

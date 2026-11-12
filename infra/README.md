@@ -95,7 +95,7 @@ Optional steps after the apply:
   a valid certificate, then run `scripts/smoke.py` and `scripts/smoke_explorables.py`
   against the live names (`[live.smoke]` in `infra-apply.toml`). Needs `gcloud`.
 
-Exit codes: 0 done and clean, 2 a command failed, 3 the plan was refused, 4 applied but the
+Exit codes: 0 done and clean, 1 usage or setup error, 2 a command failed, 3 the plan was refused, 4 applied but the
 second plan still shows changes, 5 the live check failed.
 
 The 1Password items it reads (`infra-apply.toml`, `[[secret]]`) are made once: the Cloudflare
