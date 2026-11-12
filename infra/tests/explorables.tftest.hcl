@@ -331,11 +331,11 @@ run "the_uptime_alerts_watch_explorables" {
   assert {
     condition = (
       google_monitoring_uptime_check_config.explorables.monitored_resource[0].labels["host"] == "explorables.kphutt.com"
-      && google_monitoring_uptime_check_config.explorables.http_check[0].path == "/"
+      && google_monitoring_uptime_check_config.explorables.http_check[0].path == "/robots.txt"
       && google_monitoring_uptime_check_config.explorables.http_check[0].validate_ssl == true
       && google_monitoring_uptime_check_config.explorables.http_check[0].accepted_response_status_codes[0].status_value == 200
     )
-    error_message = "explorables.kphutt.com is checked over HTTPS at its landing page, with a valid certificate, ending at 200."
+    error_message = "explorables.kphutt.com is checked over HTTPS at /robots.txt, as the site is, with a valid certificate, ending at 200."
   }
   assert {
     condition     = length(google_monitoring_uptime_check_config.explorables.selected_regions) >= 3

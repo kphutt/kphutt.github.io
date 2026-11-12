@@ -12,8 +12,8 @@
 # measures the final host's certificate. Every name must end at 200. The checks fetch
 # /robots.txt, a few hundred bytes, so they add almost no outbound data.
 #
-# explorables.kphutt.com (explorables.tf) is watched too, by its own check of its landing
-# page: it has no robots.txt, on purpose. Both alerts cover it.
+# explorables.kphutt.com (explorables.tf) is watched too, by its own check of the same
+# /robots.txt (scripts/build_explorables.py generates it). Both alerts cover it.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
 # region counts as one execution per period. 3 names x 3 regions x one check per 15 minutes
@@ -87,14 +87,15 @@ resource "google_monitoring_uptime_check_config" "site" {
   selected_regions = local.uptime_regions
 }
 
-# The landing page, a few hundred bytes. It is the only page that always exists.
+# Its own resource, not an entry in uptime_hostnames, so a terraform.tfvars that sets that
+# list cannot drop it.
 resource "google_monitoring_uptime_check_config" "explorables" {
   display_name = "Site explorables.kphutt.com"
   period       = "900s"
   timeout      = "10s"
 
   http_check {
-    path           = "/"
+    path           = "/robots.txt"
     port           = 443
     use_ssl        = true
     validate_ssl   = true

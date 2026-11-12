@@ -270,7 +270,7 @@ so the site keeps `script-src 'none'` (`AGENTS.md`, "Explorables"). It has the s
 scale to zero, the same instance cap, the same explicit TCP startup probe, the site's empty
 runtime account and the site's image repository. The deployer gets `run.developer` on it and
 nothing else new, the cost cutoff turns it off with the site, and the uptime alerts watch
-its landing page.
+its `robots.txt`.
 
 Its mapping asks for one CNAME to `ghs.googlehosted.com`, like `www`, because
 `kphutt.com` is already verified. That record is in `dns.tf`'s service list, DNS only.
@@ -303,7 +303,7 @@ certificate):
   means it has not been renewed yet. Each alert says what to do.
 
 `kphutt.com` and `www.kphutt.com` are watched by default, and `explorables.kphutt.com` by its own
-check of `/` (it has no `robots.txt`). Google follows redirects and judges the final answer, so `www`, which
+check, which a `terraform.tfvars` setting `uptime_hostnames` cannot drop. Google follows redirects and judges the final answer, so `www`, which
 redirects to the apex, is held to the final 200. That still proves its certificate handshake
 and that the redirect lands on a live page. Its certificate-expiry alert measures the apex's
 certificate. To watch another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
