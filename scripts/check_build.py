@@ -14,6 +14,7 @@ Run it against a build directory:
 """
 
 import hashlib
+import json
 import re
 import sys
 import tomllib
@@ -99,6 +100,7 @@ THEME = Path(__file__).resolve().parent.parent / "themes" / "PaperMod" / "layout
 OVERRIDDEN_THEME_FILES = {
     "_partials/head.html": "c7ef58590d6e4c755f1d2a575668095f3539475c61b39fdc12fd6e30025d30b0",
     "_partials/footer.html": "94921247defd67d205aaa2358d96365664e75de4a30d44b0ed36c6635c738543",
+    "_partials/templates/schema_json.html": "3fd05ccc156d8eda928c923776b53044097600c9c31a4812e3ebcfe9196b2ffa",
 }
 
 
@@ -158,6 +160,35 @@ def policy_problems(policy: str, required=REQUIRED_DIRECTIVES, floor=POLICY_FLOO
 # the text "ld+json" appearing anywhere among the attributes.
 JSON_LD = re.compile(r"""(?:^|\s)type\s*=\s*["']?application/ld\+json["']?(?:\s|$)""", re.I)
 
+# Any type attribute. A browser reads only the first of two, so a second one could hide a
+# script typed as JavaScript behind a JSON-LD type later in the tag. An attribute can
+# follow whitespace, a quote or a slash.
+TYPE_ATTR = re.compile(r"""(?:^|[\s"'/])type\s*=""", re.I)
+
+
+def json_ld_problem(attrs: str, body: str):
+    """Why a <script type="application/ld+json"> block is not plain data, or None.
+
+    A data block is never run, so the policy has nothing to allow for it. That only holds
+    for exactly what search engines read: one type attribute, no src, and a body that is a
+    JSON object or array. "<!--" and "<script" inside a script element change where the
+    browser ends it, so neither may appear. Templates write these blocks with jsonify,
+    which escapes "<", so a real one never contains either.
+    """
+    if len(TYPE_ATTR.findall(attrs)) != 1:
+        return "has more than one type attribute"
+    if SRC_ATTR.search(attrs):
+        return "has a src attribute"
+    if "<!--" in body or re.search(r"<script", body, re.I):
+        return 'contains "<!--" or "<script", which changes where the element ends'
+    try:
+        data = json.loads(body)
+    except ValueError as e:
+        return f"is not valid JSON ({e})"
+    if not isinstance(data, (dict, list)):
+        return "is not a JSON object or array"
+    return None
+
 
 # A src attribute on its own, not data-src or similar.
 SRC_ATTR = re.compile(r"""(?:^|\s)src\s*=""", re.I)
@@ -170,7 +201,8 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
     holds if the pages contain nothing that needs them. Inline code is exactly what a
     theme update reintroduces without anyone noticing, so look for every form of it:
     inline and external scripts, <style> elements, style= attributes, event-handler
-    attributes and javascript: URLs. JSON-LD is data, not executed, so it stays.
+    attributes and javascript: URLs. JSON-LD is data, not executed, so it stays, as long
+    as it is only data (json_ld_problem).
 
     allow_external_scripts lets through a <script src=...> with nothing between its tags,
     for an origin whose policy is script-src 'self' (scripts/check_explorables.py). This
@@ -183,6 +215,9 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
 
         for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script\s*>", html, re.S | re.I):
             if JSON_LD.search(attrs):
+                problem = json_ld_problem(attrs, body)
+                if problem:
+                    failures.append(f"{page}: JSON-LD block {problem}")
                 continue
             if allow_external_scripts and SRC_ATTR.search(attrs) and not body.strip():
                 continue

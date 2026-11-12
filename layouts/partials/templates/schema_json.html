@@ -1,0 +1,95 @@
+{{- /*
+  Replaces the theme's layouts/_partials/templates/schema_json.html. head.html calls it on
+  production builds.
+
+  The theme's version described the author as a bare name on every page, with the favicon as
+  their picture, and nothing tied the home page's Person to a post's author. This version
+  gives the person one @id, https://kphutt.com/#person, describes them once on the home
+  page, and points every other mention at that @id. explorables.kphutt.com uses the same
+  @id for its author, so search and answer engines can join the two sites' work to one
+  person. Schema.org and Google's structured-data guides: https://schema.org/Person,
+  https://developers.google.com/search/docs/appearance/structured-data/profile-page and
+  https://developers.google.com/search/docs/appearance/structured-data/article.
+
+  Every block is built as data and written with jsonify, which escapes <, > and &. Text from
+  a page title or body therefore cannot end the <script> element early.
+  scripts/check_build.py fails the build if a JSON-LD block does not parse as JSON.
+
+  scripts/check_build.py pins the theme file this replaces, so a theme update to it fails
+  the build until this file is reviewed against it.
+*/ -}}
+{{- $home := site.Home.Permalink -}}
+{{- $personID := printf "%s#person" $home -}}
+{{- $websiteID := printf "%s#website" $home -}}
+{{- $personRef := dict "@id" $personID -}}
+{{- $image := "og-image.png" | absURL -}}
+
+{{- if .IsHome -}}
+{{- $person := dict
+  "@type" "Person"
+  "@id" $personID
+  "name" site.Params.author
+  "url" $home
+  "description" (site.Params.description | plainify)
+  "mainEntityOfPage" (dict "@id" $home)
+-}}
+{{- with site.Params.schema.alternateName }}{{ $person = merge $person (dict "alternateName" .) }}{{ end -}}
+{{- with site.Params.schema.knowsAbout }}{{ $person = merge $person (dict "knowsAbout" .) }}{{ end -}}
+{{- with site.Params.schema.sameAs }}{{ $person = merge $person (dict "sameAs" .) }}{{ end -}}
+{{- $website := dict
+  "@type" "WebSite"
+  "@id" $websiteID
+  "url" $home
+  "name" site.Title
+  "description" (site.Params.description | plainify)
+  "inLanguage" site.Language.Locale
+  "publisher" $personRef
+  "author" $personRef
+-}}
+{{- $profile := dict
+  "@type" "ProfilePage"
+  "@id" $home
+  "url" $home
+  "name" site.Title
+  "isPartOf" (dict "@id" $websiteID)
+  "mainEntity" $personRef
+  "about" $personRef
+  "inLanguage" site.Language.Locale
+  "dateModified" (.Lastmod.Format "2006-01-02T15:04:05Z07:00")
+-}}
+<script type="application/ld+json">{{ dict "@context" "https://schema.org" "@graph" (slice $person $website $profile) | jsonify | safeJS }}</script>
+{{- else if or .IsPage .IsSection -}}
+{{- /* Breadcrumbs: each section above this page, then the page itself. */ -}}
+{{- $items := slice -}}
+{{- range .Ancestors.Reverse -}}
+  {{- if not .IsHome -}}
+    {{- $items = $items | append (dict "@type" "ListItem" "position" (add (len $items) 1) "name" .Title "item" .Permalink) -}}
+  {{- end -}}
+{{- end -}}
+{{- $items = $items | append (dict "@type" "ListItem" "position" (add (len $items) 1) "name" .Title "item" .Permalink) -}}
+{{- $crumbs := dict "@context" "https://schema.org" "@type" "BreadcrumbList" "itemListElement" $items }}
+<script type="application/ld+json">{{ $crumbs | jsonify | safeJS }}</script>
+{{- if .IsPage -}}
+{{- $post := dict
+  "@context" "https://schema.org"
+  "@type" "BlogPosting"
+  "@id" (printf "%s#article" .Permalink)
+  "headline" (.Title | plainify)
+  "name" (.Title | plainify)
+  "description" (.Description | default .Summary | plainify)
+  "url" .Permalink
+  "mainEntityOfPage" (dict "@type" "WebPage" "@id" .Permalink)
+  "isPartOf" (dict "@id" $websiteID)
+  "author" (dict "@type" "Person" "@id" $personID "name" site.Params.author "url" $home)
+  "publisher" $personRef
+  "image" $image
+  "inLanguage" site.Language.Locale
+  "datePublished" (.PublishDate.Format "2006-01-02T15:04:05Z07:00")
+  "dateModified" (.Lastmod.Format "2006-01-02T15:04:05Z07:00")
+  "wordCount" .WordCount
+  "articleBody" (.Plain | htmlUnescape)
+-}}
+{{- with .Params.tags }}{{ $post = merge $post (dict "keywords" .) }}{{ end }}
+<script type="application/ld+json">{{ $post | jsonify | safeJS }}</script>
+{{- end -}}
+{{- end -}}
