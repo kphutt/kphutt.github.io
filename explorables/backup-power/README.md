@@ -14,6 +14,8 @@ You watch who stays warm and who has to go outside in the storm, then add up a w
 
 Live at <https://explorables.kphutt.com/backup-power/>.
 
+![The storm test on a phone: five houses in a snowstorm, each showing its fridge, its power and who has to go outside](assets/screenshot.jpg)
+
 ## Files
 
 - `index.html`: the page's markup. It has no inline script, no style attributes and no event-handler
@@ -43,7 +45,7 @@ before a vacation. The storm, the totals and the ranking all read from it, so th
 - [Anker SOLIX F3800 Plus](https://us.ankersolix.com/products/f3800-plus) and its [generator input adapter](https://us.ankersolix.com/products/generator-input-adapter)
 - [Westinghouse WGen9500TFc](https://westinghouse.com/products/wgen9500tfc-tri-fuel-with-co-sensor) and the [WGen9500 manual](https://apelectric.com/content/PDF/Westpro/wgen9500_owners_manual.pdf)
 - [Mad Dog Electric: Seattle standby installed prices by size (2026)](https://callmaddog.com/services/whole-house-generator-installation)
-- [NailThePrice: Seattle permit records for standby generators (2023 to 2025)](https://nailtheprice.com/electrical/install-whole-house-generator/bellevue-wa/)
+- [NailThePrice: Seattle permit records for standby generators (2023 to 2025)](https://nailtheprice.com/electrical/install-whole-house-generator/seattle-wa/)
 - [LocalGoingRate: Seattle gas line costs (2026)](https://localgoingrate.com/gas-line-cost-seattle)
 - [Generac: check standby oil every 24 hours in long outages](https://www.generac.com/resources/emergency-preparedness/how-to-prepare-a-home-standby-generator-before-a-storm/)
 - [FoodSafety.gov / USDA: fridge food safe about 4 hours](https://www.foodsafety.gov/food-safety-charts/food-safety-during-power-outage)
