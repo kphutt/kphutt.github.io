@@ -273,7 +273,7 @@ jobs:
           python3 -c 'import sys; sys.exit(0 if sys.argv[1] == sys.argv[2] else f"newest revision {sys.argv[3]!r} runs {sys.argv[1]!r}, not {sys.argv[2]!r}")' "$image" "$IMAGE_DIGEST" "$rev"
           gcloud run services update-traffic "$SERVICE" \
             --region="$GCP_REGION" --project="$GCP_PROJECT" \
-            --set-tags="${CAND_TAG}=${rev}" --quiet
+            --update-tags="${CAND_TAG}=${rev}" --quiet
           gcloud run services describe "$SERVICE" \
             --region="$GCP_REGION" --project="$GCP_PROJECT" --format=json > "${{ runner.temp }}/service.json"
           CAND_REV="$rev" python3 - "${{ runner.temp }}/service.json" <<'PY'
