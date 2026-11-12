@@ -29,7 +29,7 @@ TEXT_SUFFIXES = {".html", ".xml", ".txt", ".json", ".css", ".js"}
 # Files the build is expected to publish, each with why it matters. All of these come from
 # configuration rather than from a file in content/, so losing one is silent.
 EXPECTED_FILES = {
-    "robots.txt": "crawler policy, including the AI training opt-out, would go unstated",
+    "robots.txt": "the crawler policy and the sitemap pointer would be gone",
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
