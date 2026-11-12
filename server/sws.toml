@@ -36,6 +36,9 @@ cache-control-headers = false
 compression = true
 # Off, as it was in v2. Nothing in the image is pre-compressed, and v3 turns this on by default.
 compression-static = false
+# Closes a connection with no reads or writes for this many seconds; this is the
+# GHSA-2fch-9x9r-mxmv fix. v3's default is 30, but 0 disables it, so it is set explicitly.
+idle-timeout = 30
 directory-listing = false
 # On, because the server has no way to exempt one dot-directory and RFC 9116 puts
 # security.txt at /.well-known/. Hidden files are still not served: the image holds only

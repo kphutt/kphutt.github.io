@@ -35,6 +35,9 @@ cache-control-headers = false
 compression = true
 # Off, as in server/sws.toml: nothing is pre-compressed, and v3 turns this on by default.
 compression-static = false
+# Closes a connection with no reads or writes for this many seconds; this is the
+# GHSA-2fch-9x9r-mxmv fix. v3's default is 30, but 0 disables it, so it is set explicitly.
+idle-timeout = 30
 directory-listing = false
 # Nothing here needs a dot-file, so none is served. scripts/check_explorables.py also fails
 # the build if one is in the output, and requires this line, since v3 only warns about
