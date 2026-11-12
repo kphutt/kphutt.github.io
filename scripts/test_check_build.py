@@ -87,5 +87,50 @@ class JsonLd(unittest.TestCase):
         self.assertEqual(failures_for(f'<script data-type="x" type="application/ld+json">{GOOD}</script>'), [])
 
 
+SITE_POLICY = ("default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; "
+               "connect-src {}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+
+
+class ConnectSrc(unittest.TestCase):
+    """connect-src may name the site's own robots.txt and nothing broader."""
+
+    def problems(self, sources: str) -> list:
+        return cb.policy_problems(SITE_POLICY.format(sources))
+
+    def test_the_robots_url_passes(self):
+        self.assertEqual(cb.ROBOTS_URL, "https://kphutt.com/robots.txt")
+        self.assertEqual(self.problems("https://kphutt.com/robots.txt"), [])
+
+    def test_none_passes(self):
+        self.assertEqual(self.problems("'none'"), [])
+
+    def test_the_server_config_carries_exactly_the_robots_url(self):
+        failures = []
+        headers = cb.check_server_headers(failures)
+        self.assertEqual(failures, [])
+        csp = cb.parse_policy(headers["content-security-policy"])
+        self.assertEqual(csp["connect-src"], ["https://kphutt.com/robots.txt"])
+
+    def test_anything_broader_fails(self):
+        for broader in (
+            "'self'",
+            "*",
+            "https:",
+            "https://kphutt.com",
+            "https://kphutt.com/",
+            "https://kphutt.com/robots.txt/",
+            "https://kphutt.com/*",
+            "https://*.kphutt.com/robots.txt",
+            "http://kphutt.com/robots.txt",
+            "kphutt.com/robots.txt",
+            "https://kphutt.com/sitemap.xml",
+            "https://example.com/robots.txt",
+            "https://kphutt.com/robots.txt https://example.com/",
+        ):
+            with self.subTest(broader=broader):
+                self.assertTrue(any(p.startswith("connect-src allows") for p in self.problems(broader)),
+                                self.problems(broader))
+
+
 if __name__ == "__main__":
     unittest.main()

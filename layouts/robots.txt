@@ -5,21 +5,25 @@
 
   The policy: every crawler is welcome, for every use. Search engines may index the site,
   AI assistants may read it live to answer a question, and AI developers may train on it.
-  There are no per-crawler groups, because no crawler is treated differently.
+  Allowing everything is what robots.txt means when nothing is disallowed, so there are no
+  per-crawler groups and no Content-Signal line (Lighthouse also fails robots.txt on a
+  directive it does not know).
 
-  The Content-Signal line states that policy in Cloudflare's Content Signals format
-  (contentsignals.org): search, ai-input and ai-train are all yes. Crawlers that do not
-  know the line ignore it, as RFC 9309 says they must.
-
-  To stop AI training while keeping search and live answers, set ai-train=no below. To
-  also stop particular training crawlers by name, add a group per crawler after the
-  catch-all group:
+  To stop AI training while keeping search and live answers, add a group per training
+  crawler after the catch-all group. A crawler obeys the most specific group that names
+  it, so these override the Allow below. For example:
 
     User-agent: GPTBot
     Disallow: /
+
+    User-agent: Google-Extended
+    Disallow: /
+
+  Others: ClaudeBot, Applebot-Extended, CCBot, Amazonbot, meta-externalagent, Bytespider.
+  Google-Extended and Applebot-Extended are training controls only; blocking them does not
+  affect search.
 */ -}}
 User-agent: *
-Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 
 Sitemap: {{ "sitemap.xml" | absURL }}

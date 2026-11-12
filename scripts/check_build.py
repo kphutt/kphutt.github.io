@@ -58,6 +58,10 @@ def expected_base_url() -> str:
     return match.group(1).rstrip("/")
 
 
+# robots.txt on the production origin (baseURL in hugo.toml). connect-src may name this
+# and nothing else.
+ROBOTS_URL = expected_base_url() + "/robots.txt"
+
 # The weakest Content Security Policy the site may ship. Each directive maps to the only
 # source expressions it may contain; a directive absent from the policy falls back to
 # default-src, which must be 'none'. The live policy may be stricter than this, never
@@ -68,6 +72,10 @@ POLICY_FLOOR = {
     "script-src": {"'none'"},
     "style-src": {"'self'"},
     "img-src": {"'self'"},
+    # One exact file, so Lighthouse can fetch robots.txt from the page (server/sws.toml says
+    # why). Compared as a whole source expression: 'self', the bare origin, a trailing
+    # slash (which would match a whole path prefix), a wildcard or another scheme all fail.
+    "connect-src": {"'none'", ROBOTS_URL},
     "object-src": {"'none'"},
     "base-uri": {"'none'"},
     "form-action": {"'none'"},

@@ -122,7 +122,9 @@ years, no `includeSubDomains`, no `preload`), X-Content-Type-Options, Referrer-P
 Permissions-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy. The policy is
 `script-src 'none'` with no hashes and no `'unsafe-inline'`, because the site has no inline
 code: `layouts/partials/head.html` and `footer.html` are copies of the theme's files, with
-the theme's inline scripts and style removed.
+the theme's inline scripts and style removed. `connect-src` names one file,
+`https://kphutt.com/robots.txt`, because Lighthouse and DevTools fetch robots.txt from inside
+the page; the gate accepts that exact URL and nothing broader.
 
 `scripts/check_build.py` is the gate. It fails the build if inline code comes back, or if the
 header policy in `server/sws.toml` is weaker than its floor on any directive. It also fails if a
@@ -140,9 +142,9 @@ Do not add security headers to the page with `http-equiv`. Most of them do nothi
 CSP copy would be a second policy to keep in step. Add or change a header in `server/sws.toml`.
 
 ### Search and AI discovery
-- `layouts/robots.txt` welcomes every crawler for search, live AI answers and AI training
-  (`Content-Signal: search=yes, ai-input=yes, ai-train=yes`). Its comment says how to set
-  training back to no.
+- `layouts/robots.txt` welcomes every crawler for search, live AI answers and AI training:
+  one catch-all group that allows everything. Its comment says how to stop training (a
+  Disallow group per training crawler).
 - `layouts/partials/templates/schema_json.html` writes the JSON-LD. The author is one Person,
   `https://kphutt.com/#person`, described on the home page from `params.description` and
   `[params.schema]` in `hugo.toml`, and referenced by that @id everywhere else, explorables
