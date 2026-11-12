@@ -13,7 +13,7 @@
 # /robots.txt, a few hundred bytes, so they add almost no outbound data.
 #
 # explorables.kphutt.com (explorables.tf) is watched too, by its own check of the same
-# /robots.txt (scripts/build_explorables.py generates it). Both alerts cover it.
+# /robots.txt (kphutt/explorables generates it). Both alerts cover it.
 #
 # Cost: $0. Uptime checks get 1,000,000 free executions a month per billing account, and each
 # region counts as one execution per period. 3 names x 3 regions x one check per 15 minutes

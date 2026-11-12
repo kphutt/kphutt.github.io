@@ -146,7 +146,7 @@ run "explorables_service_scales_to_zero_and_is_public" {
   }
   assert {
     condition     = google_cloud_run_v2_service.explorables.template[0].containers[0].ports[0].container_port == 8080
-    error_message = "The container port must match server/explorables.sws.toml."
+    error_message = "The container port must match kphutt/explorables' server/sws.toml."
   }
   assert {
     condition = (
@@ -178,28 +178,16 @@ run "explorables_service_scales_to_zero_and_is_public" {
   }
 }
 
-run "deployer_gains_only_the_explorables_service" {
+run "the_site_deployer_gains_nothing_of_explorables" {
   command = plan
 
   assert {
-    condition     = google_cloud_run_v2_service_iam_member.deployer_deploys_explorables.role == "roles/run.developer"
-    error_message = "The deployer gets run.developer, which cannot change IAM."
-  }
-  assert {
-    condition     = google_cloud_run_v2_service_iam_member.deployer_deploys_explorables.name == google_cloud_run_v2_service.explorables.name
-    error_message = "The binding is on the explorables service only, never the project."
-  }
-  assert {
-    condition     = google_cloud_run_v2_service_iam_member.deployer_deploys_explorables.member == "serviceAccount:${google_service_account.deployer.email}"
-    error_message = "The binding is for the deployer."
-  }
-  assert {
     condition     = length(regexall("workflows/", google_iam_workload_identity_pool_provider.github.attribute_condition)) == 2
-    error_message = "Explorables deploy from hugo.yml; no new workflow may federate."
+    error_message = "The site's provider still admits only hugo.yml and rollback.yml."
   }
   assert {
-    condition     = output.github_variables["EXPLORABLES_SERVICE"] == "explorables"
-    error_message = "The deploy job reads the service name from EXPLORABLES_SERVICE."
+    condition     = !contains(keys(output.github_variables), "EXPLORABLES_SERVICE")
+    error_message = "The site repository no longer deploys explorables, so it gets no EXPLORABLES_SERVICE."
   }
 }
 

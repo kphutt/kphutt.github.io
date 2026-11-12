@@ -144,8 +144,7 @@ def parse_policy(policy: str) -> dict:
 def policy_problems(policy: str, required=REQUIRED_DIRECTIVES, floor=POLICY_FLOOR) -> list:
     """Every way `policy` is weaker than `floor`. An empty list means it holds.
 
-    The floor defaults to this site's. scripts/check_explorables.py passes its own, for the
-    explorables origin, and the rules are the same.
+    The floor defaults to this site's; a test passes its own to check the rules.
     """
     problems = []
     if not policy.isascii() or any(ord(c) < 32 and c not in "\t\n\f\r" for c in policy):
@@ -204,7 +203,7 @@ def json_ld_problem(attrs: str, body: str):
 SRC_ATTR = re.compile(r"""(?:^|\s)src\s*=""", re.I)
 
 
-def check_inline_code(root: Path, failures: list, allow_external_scripts: bool = False) -> None:
+def check_inline_code(root: Path, failures: list) -> None:
     """The built site must contain no code the policy would have to allow.
 
     The policy is script-src 'none' with no 'unsafe-inline' and no hashes, which only
@@ -213,10 +212,6 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
     inline and external scripts, <style> elements, style= attributes, event-handler
     attributes and javascript: URLs. JSON-LD is data, not executed, so it stays, as long
     as it is only data (json_ld_problem).
-
-    allow_external_scripts lets through a <script src=...> with nothing between its tags,
-    for an origin whose policy is script-src 'self' (scripts/check_explorables.py). This
-    site never sets it. Where those loads point is check_explorables.py's to check.
     """
     # SVG files are documents too: opened directly, one can carry script or handlers.
     for path in sorted([*root.rglob("*.html"), *root.rglob("*.svg")]):
@@ -228,8 +223,6 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
                 problem = json_ld_problem(attrs, body)
                 if problem:
                     failures.append(f"{page}: JSON-LD block {problem}")
-                continue
-            if allow_external_scripts and SRC_ATTR.search(attrs) and not body.strip():
                 continue
             kind = "external script" if "src=" in attrs.lower() else "inline script"
             snippet = " ".join((attrs + " " + body).split())[:60]
@@ -247,16 +240,13 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
             failures.append(f"{page}: javascript: URL is inline script")
 
 
-def check_no_outside_loads(root: Path, base: str, failures: list, allow_font_face: bool = False) -> None:
+def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
     """Nothing the browser fetches by itself may come from another origin.
 
     Outbound <a> links are fine -- the visitor clicks them, the page does not load them.
     Stylesheets, icons, preloads, images and CSS url()s are what the page loads, and the
     policy only allows this site for those. Catch it here rather than as a silent console
     error on the live site.
-
-    allow_font_face is for an origin whose policy has font-src 'self'
-    (scripts/check_explorables.py). The font's url() is still held to the same rule.
     """
     loads = []
     for path in sorted(root.rglob("*.html")):
@@ -285,10 +275,7 @@ def check_no_outside_loads(root: Path, base: str, failures: list, allow_font_fac
     for path in sorted(root.rglob("*.css")):
         css = path.read_text(encoding="utf-8", errors="replace")
         page = path.relative_to(root).as_posix()
-        if allow_font_face:
-            if re.search(r"@import", css, re.I):
-                failures.append(f"{page}: @import -- link each stylesheet from the page instead")
-        elif re.search(r"@import|@font-face", css, re.I):
+        if re.search(r"@import|@font-face", css, re.I):
             failures.append(f"{page}: @import or @font-face -- the policy has no font-src and loads no other sheet")
         for url in re.findall(r"url\(\s*['\"]?([^'\")]+)", css, re.I):
             loads.append((page, url))
@@ -318,8 +305,8 @@ def check_server_headers(
     every response, including feeds, images and the 404 page. Loosening it below the floor
     fails the build.
 
-    The defaults are this site's. scripts/check_explorables.py passes the explorables
-    server's config, floor, headers and HSTS flags. Returns the catch-all rule's headers, lowercased, so a caller
+    The defaults are this site's; the parameters let a test check the rules on its own
+    config. Returns the catch-all rule's headers, lowercased, so a caller
     can check more of them, or None if there is no catch-all rule to read.
     """
     name = config_path.relative_to(config_path.parent.parent).as_posix()
@@ -464,7 +451,6 @@ def check_server_settings(failures: list, config_path: Path = SERVER_CONFIG,
     """Every server feature the site does not use is written out as off.
 
     The defaults are this site's, which uses one redirect (www to the apex).
-    scripts/check_explorables.py passes its own config, which has no redirects.
     """
     name = config_path.relative_to(config_path.parent.parent).as_posix()
     try:

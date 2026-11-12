@@ -8,9 +8,8 @@
 #
 #   deployer  what GitHub Actions becomes, via Workload Identity Federation (no key ever
 #             exists). It can push images to the one repository and deploy revisions of
-#             the site's service and the explorables service (explorables.tf). It cannot
-#             change IAM, infra or anything else: infra changes are applied by hand with
-#             `tofu apply` (infra/README.md).
+#             the site's service, and nothing of explorables.tf's. It cannot change IAM,
+#             infra or anything else: infra changes are applied by hand (infra/README.md).
 
 resource "google_service_account" "runtime" {
   account_id   = "site-runtime"
@@ -38,16 +37,6 @@ resource "google_artifact_registry_repository_iam_member" "deployer_push" {
 resource "google_cloud_run_v2_service_iam_member" "deployer_deploy" {
   name     = google_cloud_run_v2_service.site.name
   location = google_cloud_run_v2_service.site.location
-  role     = "roles/run.developer"
-  member   = "serviceAccount:${google_service_account.deployer.email}"
-}
-
-# The same, on the explorables service and nothing more. Its images go to the same
-# repository (deployer_push above) and it runs as the same runtime account (below), so this
-# one binding is all the deployer gains.
-resource "google_cloud_run_v2_service_iam_member" "deployer_deploys_explorables" {
-  name     = google_cloud_run_v2_service.explorables.name
-  location = google_cloud_run_v2_service.explorables.location
   role     = "roles/run.developer"
   member   = "serviceAccount:${google_service_account.deployer.email}"
 }

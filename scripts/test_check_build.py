@@ -21,6 +21,26 @@ import check_build as cb  # noqa: E402
 GOOD = '{"@context":"https://schema.org","@type":"Person","name":"A"}'
 
 
+class NoScriptNoFonts(unittest.TestCase):
+    """The site refuses every script file and every web font: script-src 'none', no font-src."""
+
+    def test_an_external_script_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "index.html").write_text('<script src="a.js"></script>', encoding="utf-8")
+            failures: list = []
+            cb.check_inline_code(root, failures)
+        self.assertTrue(any("external script" in f for f in failures), failures)
+
+    def test_a_font_face_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.css").write_text('@font-face { src: url("f.woff2"); }', encoding="utf-8")
+            failures: list = []
+            cb.check_no_outside_loads(root, "https://kphutt.com", failures)
+        self.assertTrue(any("@font-face" in f for f in failures), failures)
+
+
 def failures_for(html: str) -> list:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
