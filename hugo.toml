@@ -13,6 +13,17 @@ theme = "PaperMod"
 # documented companion switch, now in the right scope.
 enableRobotsTXT = true
 
+# Each page's last-modified date comes from the last commit that touched its file. It
+# feeds the sitemap's <lastmod>, dateModified in the structured data and the feed. Without
+# it, a page with no date of its own took the newest post's date, so the home page said it
+# had not changed since March. The workflow checks out full history (fetch-depth: 0),
+# which this needs.
+enableGitInfo = true
+
+# No tag or category pages. The site uses neither, so each was an empty list page in the
+# sitemap, which gives a search engine a page with nothing on it to crawl and judge.
+disableKinds = ["taxonomy", "term"]
+
 # content/LICENSE is the licence for the writing (CC BY 4.0). It sits beside the content it
 # covers so the licence travels with it, but it is not part of the site: without this,
 # Hugo copies it to /LICENSE in the build output. Matched against the full path, with
@@ -25,7 +36,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 
 [params]
   author = "Karsten Huttelmaier"
-  description = "Identity and security systems. Notes on what I find."
+  description = "I build identity and security infrastructure."
   ShowReadingTime = false
   ShowShareButtons = false
   ShowPostNavLinks = true
@@ -73,11 +84,22 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 # sameAs is how an engine learns that this site, that GitHub account and that LinkedIn
 # profile are one entity rather than three. It was previously empty, so nothing connected
 # them. Only genuinely equivalent profiles belong here.
+#
+# layouts/partials/templates/schema_json.html renders these, replacing the theme's version
+# of that file. It gives the person one @id, https://kphutt.com/#person, and every page
+# that mentions the author points at that @id, so the home page and each post describe one
+# entity. The owner's other sites, such as explorables.kphutt.com, can reference the same
+# @id from their own repositories. The description is
+# params.description above. knowsAbout repeats the topics the home page names.
 [params.schema]
   publisherType = "Person"
+  alternateName = "kphutt"
+  knowsAbout = ["Service identity", "PKI", "OAuth", "OpenID Connect"]
   sameAs = [
     "https://github.com/kphutt",
     "https://www.linkedin.com/in/karstenhuttelmaier",
+    "https://stackoverflow.com/users/165112/kphutt",
+    "https://x.com/kphutt",
   ]
 
 [menu]
@@ -100,6 +122,11 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 
 # security.txt (RFC 9116). The page that renders it is content/security.md, which puts it
 # at /.well-known/security.txt; its template is layouts/_default/single.securitytxt.txt.
+# robots.txt is not another version of the home page, so the home page does not announce
+# it with <link rel="alternate">. Crawlers fetch it from its fixed address.
+[outputFormats.robots]
+  notAlternative = true
+
 [outputFormats.securitytxt]
   mediaType = "text/plain"
   baseName = "security"

@@ -106,7 +106,13 @@ source = "**"
 # Starts from default-src 'none' and allows only what the built site loads: its own
 # stylesheet and its own images. No 'unsafe-inline' and no hashes, because there is no
 # inline code (layouts/partials/head.html and footer.html remove the theme's).
-Content-Security-Policy = "default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+#
+# connect-src names one file, robots.txt, and nothing else. Lighthouse and Chrome DevTools
+# fetch robots.txt from inside the page, so the page's connect-src applies; without this
+# they report robots.txt as unreachable. The page runs no script, so nothing else can make
+# that request, and the file is public anyway. A URL with a path matches only that exact
+# path. scripts/check_build.py accepts this one URL and nothing broader.
+Content-Security-Policy = "default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; connect-src https://kphutt.com/robots.txt; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
 # Two years. Deliberately no includeSubDomains and no preload: both are hard to undo, and
 # other services will live on subdomains of this domain. Adding either needs a decision.
 Strict-Transport-Security = "max-age=63072000"
