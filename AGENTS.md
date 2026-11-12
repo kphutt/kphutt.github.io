@@ -54,9 +54,9 @@ python -m pre_commit install --hook-type pre-commit --hook-type pre-push
 
 The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's site and
 explorables build commands verbatim and adds the preconditions CI gets from a fresh checkout:
-the pinned Hugo, and an empty output directory. `public/` is gitignored and Hugo does not purge files whose content is
-gone, so a working tree accumulates stale pages that fail the check locally and exist nowhere
-in CI.
+the pinned Hugo, and an empty output directory. `public/` is gitignored and Hugo does not purge
+files whose content is gone, so a working tree accumulates stale pages that fail the check
+locally and exist nowhere in CI.
 
 ## Adding Content
 - New post: create `content/posts/your-post.md` with front matter (title, date, description)
@@ -158,17 +158,23 @@ can reach the main site's pages.
 
 **Adding one:** a folder `explorables/<slug>/` with an `index.html`, its own script, style,
 image and font files, and a `README.md` (`explorables/README.md` has the steps). READMEs are
-for the repository: `scripts/build_explorables.py` leaves them out of the image.
-`scripts/check_explorables.py` fails the build if a page has inline code, loads anything
-from another origin, or lacks `<meta name="robots" content="noindex, nofollow">`; if a
-folder has no README or index; if a README or dot-file would be served; or if the headers
-in `server/explorables.sws.toml` weaken.
+for the repository: `scripts/build_explorables.py` leaves them out of the image, and
+generates `robots.txt` and `sitemap.xml`. `scripts/check_explorables.py` fails the build if a
+page has inline code or loads anything from another origin; if a folder has no README or
+index; if a README or dot-file would be served; or if the headers in
+`server/explorables.sws.toml` weaken.
+
+**Findable in search.** Explorables are meant to be found. The gate fails if any page but
+`404.html` says `noindex`, by meta tag or `X-Robots-Tag` header, so nobody hides a page by
+accident. It requires `404.html` to say `noindex`, since it answers for every missing path.
+Every other page needs a `<title>`, a `<meta name="description">` and a canonical link to
+its own absolute URL. `robots.txt` allows everything and names the sitemap, and the sitemap
+must list exactly the landing page and every explorable.
 
 **The policy** is the site's with three changes: `script-src 'self'`, `font-src 'self'`, and
 `require-trusted-types-for 'script'`. Still no `'unsafe-inline'`, hashes or nonces, and no
-`connect-src`, so pages make no network calls. `X-Robots-Tag: noindex, nofollow` and
-`Referrer-Policy: no-referrer` go on every response. There is no `robots.txt` Disallow on
-purpose: a crawler that may not fetch a page never sees its noindex.
+`connect-src`, so pages make no network calls. `Referrer-Policy: no-referrer` goes on every
+response.
 
 **Deploy:** `explorables.Dockerfile` (same pinned base image as the site), and the
 `explorables`, `explorables-image` and `explorables-deploy` jobs in `hugo.yml`. The deploy is

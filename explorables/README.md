@@ -5,7 +5,8 @@ its own JavaScript, so they live on their own origin and `kphutt.com` keeps
 `script-src 'none'`. Why, and how they are built and deployed: `AGENTS.md`, "Explorables".
 
 This folder is copied into the image as it is, except every `README.md`, which is for the
-repository and is never served.
+repository and is never served. The build adds `robots.txt` and `sitemap.xml`, so don't write
+those here.
 
 ## Adding one
 
@@ -19,7 +20,10 @@ repository and is never served.
 
 ## Rules
 
-- Every page has `<meta name="robots" content="noindex, nofollow">`.
+- Every page can be found in search: no `noindex`. Only `404.html` has one.
+- Every page has a `<title>`, a `<meta name="description">` and a
+  `<link rel="canonical">` to its own absolute URL, such as
+  `https://explorables.kphutt.com/<slug>/`.
 - Scripts and styles are files, loaded with `<script src>` and `<link rel="stylesheet">`.
   No inline `<script>` or `<style>`, no `style=` or `on...=` attributes, no `javascript:`
   URLs.
