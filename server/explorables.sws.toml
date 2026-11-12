@@ -8,9 +8,9 @@
 #
 # THE SECURITY HEADERS BELOW ARE A POLICY, NOT TUNING. scripts/check_explorables.py reads
 # this file and fails the build if the Content-Security-Policy is weaker than its floor on
-# any directive, if it gains a connect-src, if HSTS gains includeSubDomains or preload, if
-# a required header goes missing, or if anything here would keep a page out of search
-# results. scripts/smoke_explorables.py checks a running server sends exactly these values.
+# any directive, if HSTS loses includeSubDomains or gains preload, if a required header goes
+# missing, if a cache rule turns immutable, or if anything here would keep a page out of
+# search results. scripts/smoke_explorables.py checks a running server sends exactly these values.
 
 [general]
 host = "0.0.0.0"
@@ -29,6 +29,9 @@ page404 = "404.html"
 security-headers = false
 cache-control-headers = false
 
+# Gzip, Brotli or Zstandard, as the browser asks, for the server's text types: HTML, CSS,
+# JavaScript, SVG, XML and plain text. Fonts are already compressed (woff2). The gate requires
+# it, and scripts/smoke_explorables.py checks each type comes back compressed.
 compression = true
 directory-listing = false
 # Nothing here needs a dot-file, so none is served. scripts/check_explorables.py also fails
@@ -49,14 +52,20 @@ index-files = "index.html"
 [[advanced.headers]]
 source = "**"
 [advanced.headers.headers]
-# The site's policy, with three changes: script-src 'self' so a page can run its own
-# script files, font-src 'self' for bundled fonts, and Trusted Types, so a script cannot
-# hand a plain string to innerHTML or eval-like sinks. Still no 'unsafe-inline', no
-# hashes, no nonces and no other origin. No connect-src: default-src 'none' then blocks
-# fetch, XHR, WebSocket and beacons, so a page cannot call any API, this one included.
-Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; require-trusted-types-for 'script'"
-# As the site: two years, no includeSubDomains, no preload.
-Strict-Transport-Security = "max-age=63072000"
+# The site's policy, with these changes: script-src 'self' so a page can run its own script
+# files, font-src 'self' for bundled fonts, and Trusted Types with no policy allowed
+# (require-trusted-types-for 'script' plus trusted-types 'none'), so no script can hand a
+# string to innerHTML or an eval-like sink. connect-src 'none' says outright that fetch,
+# XHR, WebSocket and beacons are blocked, so a page cannot call any API, this one included.
+# upgrade-insecure-requests turns any stray http:// load into https://. Still no
+# 'unsafe-inline', no hashes, no nonces and no other origin. Setting styles through the
+# CSSOM (element.style) is allowed by style-src 'self'; a style= attribute is not.
+Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests"
+# Two years, with includeSubDomains: it covers only names under explorables.kphutt.com,
+# none of which exist or are planned. Deliberately no preload. The preload list only takes
+# an apex domain, so asking for it here would mean preloading kphutt.com and every name under
+# it, which the main site does not do (server/sws.toml).
+Strict-Transport-Security = "max-age=63072000; includeSubDomains"
 X-Content-Type-Options = "nosniff"
 # Nothing a page links to learns which explorable sent the visitor.
 Referrer-Policy = "no-referrer"
@@ -64,6 +73,11 @@ Referrer-Policy = "no-referrer"
 Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
 Cross-Origin-Opener-Policy = "same-origin"
 Cross-Origin-Resource-Policy = "same-origin"
+# Every resource must be same-origin or opt in to being embedded. Everything here is
+# same-origin, so nothing breaks, and the page is cross-origin isolated.
+Cross-Origin-Embedder-Policy = "require-corp"
+# frame-ancestors 'none' already forbids framing. This says the same to older browsers.
+X-Frame-Options = "DENY"
 # No X-Robots-Tag: explorables are meant to be found in search. The build generates
 # robots.txt and sitemap.xml, and only the 404 page carries a noindex meta tag.
 # File names here do not change when their content does, so everything stays short.
@@ -75,7 +89,15 @@ Cache-Control = "public, max-age=300"
 source = "/sitemap.xml"
 headers.Content-Type = "application/xml"
 
-# Bundled fonts change rarely, and a stale one only looks slightly different.
+# Bundled fonts and favicon.svg: files whose names carry no content hash, so a new version
+# keeps the old name. 30 days, which is long enough for Lighthouse's static-asset check, and
+# safe: a returning visitor may see the old font or icon for up to a month after a change,
+# and both are only cosmetic. Never immutable, which promises a name's content never changes;
+# that is only true of hashed names. To ship a font change at once, give the file a new name.
 [[advanced.headers]]
 source = "**/*.{woff2,woff}"
-headers.Cache-Control = "public, max-age=86400"
+headers.Cache-Control = "public, max-age=2592000"
+
+[[advanced.headers]]
+source = "**/favicon.svg"
+headers.Cache-Control = "public, max-age=2592000"

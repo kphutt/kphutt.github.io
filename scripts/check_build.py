@@ -265,6 +265,7 @@ def check_server_headers(
     floor: dict = POLICY_FLOOR,
     required_directives: tuple = REQUIRED_DIRECTIVES + ("frame-ancestors", "object-src"),
     required_headers: dict = REQUIRED_SERVER_HEADERS,
+    refused_hsts_flags: tuple = ("includesubdomains", "preload"),
 ):
     """The server config must send the full header set, with a policy at or above the floor.
 
@@ -273,7 +274,7 @@ def check_server_headers(
     fails the build.
 
     The defaults are this site's. scripts/check_explorables.py passes the explorables
-    server's config and floor. Returns the catch-all rule's headers, lowercased, so a caller
+    server's config, floor, headers and HSTS flags. Returns the catch-all rule's headers, lowercased, so a caller
     can check more of them, or None if there is no catch-all rule to read.
     """
     name = config_path.relative_to(config_path.parent.parent).as_posix()
@@ -334,7 +335,7 @@ def check_server_headers(
     # Both are hard to undo and cover every subdomain, including ones served elsewhere.
     # Adding either is a decision for the site's owner, so it fails here until this check
     # is changed deliberately alongside it.
-    for flag in ("includesubdomains", "preload"):
+    for flag in refused_hsts_flags:
         if flag in hsts.lower():
             failures.append(f"{name}: Strict-Transport-Security has {flag}, which needs an explicit decision")
 

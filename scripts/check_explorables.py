@@ -15,7 +15,9 @@ rules as the site, and this file reuses check_build.py's checks to apply them:
   - robots.txt allows everything and names the sitemap, and sitemap.xml lists exactly the
     landing page and every explorable, by absolute URL on ORIGIN;
   - server/explorables.sws.toml sends the full header set, with a Content-Security-Policy
-    no weaker than POLICY_FLOOR on any directive and no connect-src;
+    no weaker than POLICY_FLOOR on any directive, Trusted Types with no policy allowed,
+    COEP, X-Frame-Options, HSTS with includeSubDomains and without preload, compression,
+    and a long but not immutable cache for fonts and favicon.svg;
   - every explorables/<slug>/ has an index.html and a README.md, and no README is in the
     output, where the server would serve it;
   - no dot-files in the output;
@@ -54,22 +56,43 @@ POLICY_FLOOR = {
     "style-src": {"'self'"},
     "img-src": {"'self'"},
     "font-src": {"'self'"},
+    "connect-src": {"'none'"},
     "object-src": {"'none'"},
     "base-uri": {"'none'"},
     "form-action": {"'none'"},
     "frame-ancestors": {"'none'"},
 }
-# Every directive in the floor must be written out, and Trusted Types too.
-# require-trusted-types-for is a restrict-only directive in check_build, so its value is
-# checked below.
-REQUIRED_DIRECTIVES = (*POLICY_FLOOR, "require-trusted-types-for")
+# Every directive in the floor must be written out, connect-src 'none' included, so the
+# policy says in so many words that a page makes no network calls. The three restrict-only
+# directives below are required too, and check_server checks their values: check_build
+# accepts any value for them.
+REQUIRED_DIRECTIVES = (*POLICY_FLOOR, "require-trusted-types-for", "trusted-types", "upgrade-insecure-requests")
+# The exact value each restrict-only directive must have. trusted-types 'none' means no
+# script can create a Trusted Types policy, so nothing can turn a string into HTML or code.
+RESTRICT_ONLY_VALUES = {
+    "require-trusted-types-for": ["'script'"],
+    "trusted-types": ["'none'"],
+    "upgrade-insecure-requests": [],
+}
 
 REQUIRED_HEADERS = {
     "X-Content-Type-Options": {"nosniff"},
     "Referrer-Policy": {"no-referrer"},
     "Cross-Origin-Opener-Policy": {"same-origin"},
     "Cross-Origin-Resource-Policy": {"same-origin"},
+    "Cross-Origin-Embedder-Policy": {"require-corp"},
+    # frame-ancestors 'none' already forbids framing; this says the same to older browsers.
+    "X-Frame-Options": {"DENY"},
 }
+
+# includeSubDomains is required here, and preload refused (server/explorables.sws.toml).
+REFUSED_HSTS_FLAGS = ("preload",)
+
+# Static files whose names carry no content hash: fonts and favicon.svg. They get a long
+# cache, never immutable, and at least this long. LONG_CACHE_SOURCES are the rules that
+# must give it to them.
+MIN_LONG_CACHE = 2592000  # 30 days
+LONG_CACHE_SOURCES = ("**/*.{woff2,woff}", "**/favicon.svg")
 
 # The one page kept out of search: it answers for every missing path.
 NOT_FOUND = "404.html"
@@ -94,17 +117,19 @@ def attributes(tag: str) -> dict:
 
 
 def check_server(failures: list, config: Path = CONFIG, site_config: Path = cb.SERVER_CONFIG) -> None:
-    headers = cb.check_server_headers(failures, config, POLICY_FLOOR, REQUIRED_DIRECTIVES, REQUIRED_HEADERS)
+    headers = cb.check_server_headers(failures, config, POLICY_FLOOR, REQUIRED_DIRECTIVES, REQUIRED_HEADERS,
+                                      REFUSED_HSTS_FLAGS)
     name = config.relative_to(config.parent.parent).as_posix()
     if headers is None:
         return
     policy = cb.parse_policy(headers.get("content-security-policy") or "")
-    # default-src 'none' blocks fetch, XHR, WebSocket and beacons. Even connect-src 'none'
-    # is refused, so the rule reads "no connect-src" and nothing has to be argued.
-    if "connect-src" in policy:
-        failures.append(f"{name}: Content-Security-Policy has connect-src -- explorables make no network calls")
-    if [s.lower() for s in policy.get("require-trusted-types-for", [])] != ["'script'"]:
-        failures.append(f"{name}: Content-Security-Policy must have require-trusted-types-for 'script'")
+    for directive, want in RESTRICT_ONLY_VALUES.items():
+        if directive in policy and [s.lower() for s in policy[directive]] != want:
+            failures.append(f"{name}: Content-Security-Policy must have {' '.join([directive, *want])}, "
+                            f"got {' '.join([directive, *policy[directive]])}")
+    hsts = [t.strip().lower() for t in (headers.get("strict-transport-security") or "").split(";")]
+    if "includesubdomains" not in hsts:
+        failures.append(f"{name}: Strict-Transport-Security must have includeSubDomains")
     site = cb.check_server_headers([], site_config) or {}
     if headers.get("permissions-policy") != site.get("permissions-policy"):
         failures.append(f"{name}: Permissions-Policy must equal the site's in {site_config.name}")
@@ -114,9 +139,23 @@ def check_server(failures: list, config: Path = CONFIG, site_config: Path = cb.S
     if hides(headers.get("x-robots-tag") or ""):
         failures.append(f"{name}: X-Robots-Tag {headers['x-robots-tag']!r} would keep every page out of search")
 
-    config_text = config.read_text(encoding="utf-8")
-    general = cb.tomllib.loads(config_text).get("general", {})
-    for key, want in (("page404", "404.html"), ("directory-listing", False), ("ignore-hidden-files", True)):
+    parsed = cb.tomllib.loads(config.read_text(encoding="utf-8"))
+    rules = (parsed.get("advanced") or {}).get("headers") or []
+    for rule in rules:
+        cache = {k.lower(): v for k, v in rule.get("headers", {}).items()}.get("cache-control", "")
+        # Nothing here is named by its content's hash, so nothing may be cached as unchanging.
+        if "immutable" in cache.lower():
+            failures.append(f"{name}: rule for {rule.get('source')!r} is immutable, but no name here carries a content hash")
+    for source in LONG_CACHE_SOURCES:
+        match = [r for r in rules if r.get("source") == source]
+        cache = {k.lower(): v for k, v in (match[0].get("headers", {}) if match else {}).items()}.get("cache-control", "")
+        age = re.search(r"max-age=(\d+)", cache)
+        if not age or int(age.group(1)) < MIN_LONG_CACHE:
+            failures.append(f"{name}: no rule for {source!r} with Cache-Control max-age of at least {MIN_LONG_CACHE}")
+
+    general = parsed.get("general", {})
+    for key, want in (("page404", "404.html"), ("directory-listing", False), ("ignore-hidden-files", True),
+                      ("compression", True)):
         if general.get(key) != want:
             failures.append(f"{name}: {key} must be {want!r}, got {general.get(key)!r}")
 
@@ -281,7 +320,7 @@ def main() -> int:
     print(f"Explorables check passed: {len(slugs)} explorable(s), all in the sitemap and findable")
     print("in search (only 404.html noindex), each with a title, description and canonical URL,")
     print("no inline code, nothing loaded from another origin, no README or dot-file served,")
-    print("CSP at or above the floor in server/explorables.sws.toml with no connect-src,")
+    print("CSP at or above the floor in server/explorables.sws.toml, connect-src 'none',")
     print("every required header set, base image the same as the site's.")
     return 0
 
