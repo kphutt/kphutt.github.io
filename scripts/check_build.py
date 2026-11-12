@@ -38,6 +38,8 @@ EXPECTED_FILES = {
     # the internal-reference check below cannot see it. Losing it means every link preview
     # silently falls back to a bare URL.
     "og-image.png": "link previews would lose their image",
+    # Nothing links it. IndexNow engines fetch it to check the key scripts/indexnow.py sends.
+    "indexnow.txt": "IndexNow engines would reject every submission",
     # Linked from extend_head.html, so the reference check does cover it -- but it is
     # listed here too because losing it degrades silently to the raster fallback rather
     # than visibly breaking, which is exactly the kind of quiet regression that hides.
