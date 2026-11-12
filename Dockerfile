@@ -11,7 +11,11 @@
 # The base image is static-web-server's own, built FROM scratch: one static binary, no
 # shell, no package manager. Pinned by digest, so a re-pushed tag cannot change what is
 # deployed; Dependabot proposes digest updates.
-FROM ghcr.io/static-web-server/static-web-server:2.44.1@sha256:94618e3d17802265a21926217e6f9e7832b311b6fbf5933684001739fafed06a
+#
+# Why a beta: 2.x up to 2.44.2 never closes idle or stalled connections, so any client can
+# hold file descriptors until the server stops accepting connections (GHSA-2fch-9x9r-mxmv,
+# High). 3.0.0-beta.2 is the only release that fixes it. Move to 3.0.0 stable when it ships.
+FROM ghcr.io/static-web-server/static-web-server:3.0.0-beta.2@sha256:dd6db18272872154f1d287cc5b565626379339c34171263aa0a97b68c78f4ac3
 
 COPY server/sws.toml /etc/sws.toml
 COPY public/ /public/

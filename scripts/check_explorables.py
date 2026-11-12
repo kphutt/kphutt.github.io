@@ -154,7 +154,7 @@ def check_server(failures: list, config: Path = CONFIG, site_config: Path = cb.S
             failures.append(f"{name}: no rule for {source!r} with Cache-Control max-age of at least {MIN_LONG_CACHE}")
 
     general = parsed.get("general", {})
-    for key, want in (("page404", "404.html"), ("directory-listing", False), ("ignore-hidden-files", True),
+    for key, want in (("page404", "404.html"), ("directory-listing", False), ("include-hidden", False),
                       ("compression", True)):
         if general.get(key) != want:
             failures.append(f"{name}: {key} must be {want!r}, got {general.get(key)!r}")
