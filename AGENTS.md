@@ -171,10 +171,16 @@ Every other page needs a `<title>`, a `<meta name="description">` and a canonica
 its own absolute URL. `robots.txt` allows everything and names the sitemap, and the sitemap
 must list exactly the landing page and every explorable.
 
-**The policy** is the site's with three changes: `script-src 'self'`, `font-src 'self'`, and
-`require-trusted-types-for 'script'`. Still no `'unsafe-inline'`, hashes or nonces, and no
-`connect-src`, so pages make no network calls. `Referrer-Policy: no-referrer` goes on every
-response.
+**The policy** is the site's with these changes: `script-src 'self'`, `font-src 'self'`,
+`connect-src 'none'`, Trusted Types with no policy allowed (`require-trusted-types-for 'script'`
+and `trusted-types 'none'`), and `upgrade-insecure-requests`. Still no `'unsafe-inline'`,
+hashes or nonces, and pages make no network calls. Styles set through the CSSOM
+(`element.style`) are allowed by `style-src 'self'`; `style=` attributes are not. Every response
+also carries `Cross-Origin-Embedder-Policy: require-corp`, `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer`. HSTS has `includeSubDomains`, which covers only names under
+`explorables.kphutt.com`, and no `preload`: the preload list only takes an apex domain, and
+`kphutt.com` does not preload. Fonts and `favicon.svg` are cached for 30 days, never
+`immutable`, because their names carry no content hash.
 
 **Deploy:** `explorables.Dockerfile` (same pinned base image as the site), and the
 `explorables`, `explorables-image` and `explorables-deploy` jobs in `hugo.yml`. The deploy is

@@ -29,7 +29,8 @@ those here.
   URLs.
 - Everything a page loads comes from this origin, by a relative URL. That includes fonts:
   bundle them, with their licence.
-- No network calls. The policy has no `connect-src`, so `fetch` and the like are blocked.
-- Trusted Types are required. Build the page with DOM methods (`textContent`,
-  `createElement`) rather than by assigning strings to `innerHTML`.
+- No network calls. The policy has `connect-src 'none'`, so `fetch` and the like are blocked.
+- Trusted Types are required, and no policy may be created (`trusted-types 'none'`). Build the
+  page with DOM methods (`textContent`, `createElement`) rather than by assigning strings to
+  `innerHTML`. Set styles through the CSSOM (`element.style`), never a `style=` attribute.
 - No dot-files.
