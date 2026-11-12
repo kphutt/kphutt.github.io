@@ -258,7 +258,7 @@ def cert_ok(host: str) -> tuple[bool, str]:
 def check_live(cfg: dict, root: Path, infra: Path, env: dict[str, str], minutes: float) -> bool:
     """Wait for every domain mapping to be Ready with a valid certificate, then smoke-test."""
     live = cfg.get("live", {})
-    var_text = "".join((infra / f).read_text(encoding="utf-8") for f in cfg.get("var_files", []))
+    var_text = "\n".join((infra / f).read_text(encoding="utf-8") for f in cfg.get("var_files", []))
     values = tfvars_strings(var_text)
     project = live.get("project") or values.get("project_id")
     region = live.get("region") or values.get("region")
@@ -313,7 +313,7 @@ def parse_args(argv: list[str], steps: list[str]) -> argparse.Namespace:
     for kind in sorted(ALLOWABLE):
         ap.add_argument(f"--allow-{kind}", action="append", default=[], metavar="ADDRESS",
                         help=f"allow a {kind} of this address (no index: every instance)")
-    ap.add_argument("--run", action="append", default=[], choices=steps or None, metavar="STEP",
+    ap.add_argument("--run", action="append", default=[], choices=steps, metavar="STEP",
                     help="after the apply, run this step from infra-apply.toml [steps]: "
                          + (", ".join(steps) or "none configured"))
     ap.add_argument("--deploy", action="store_true", help="after the apply, start the deploy workflow")

@@ -3,7 +3,7 @@
 #
 # Providers are mocked, as in plan.tftest.hcl. These pin what would be costly to get wrong:
 # the second service costs nothing when idle, the deployer gains this one service and nothing
-# else, the mapping asks for exactly one CNAME, the cost cutoff turns it off too, and its
+# else, the explorables repository's own deployer (explorables-repo.tf) gains only it too, the mapping asks for exactly one CNAME, the cost cutoff turns it off too, and its
 # template never carries a revision name for a later apply to resend.
 
 mock_provider "google" {
@@ -352,4 +352,111 @@ run "the_uptime_alerts_watch_explorables" {
     condition     = strcontains(google_monitoring_alert_policy.site_down.conditions[0].condition_threshold[0].filter, "next-kphutt-com-abc123")
     error_message = "The site's own checks stay in the filter."
   }
+}
+
+# The explorables repository's own deploy identity (explorables-repo.tf).
+
+run "the_explorables_repository_cannot_deploy_until_its_id_is_set" {
+  command = plan
+
+  assert {
+    condition     = length(google_iam_workload_identity_pool_provider.github_explorables) == 0 && length(google_service_account_iam_member.explorables_github_becomes_deployer) == 0
+    error_message = "With no repository id, no provider and no binding exist, so nothing can become the explorables deployer."
+  }
+  assert {
+    condition     = output.explorables_github_variables["WIF_PROVIDER"] == ""
+    error_message = "WIF_PROVIDER stays empty, so that repository's deploy job skips itself."
+  }
+}
+
+run "the_explorables_repository_deploys_only_the_explorables_service" {
+  command = plan
+
+  variables {
+    explorables_github_repository_id = "77"
+  }
+
+  assert {
+    condition     = google_service_account.explorables_deployer.account_id == "explorables-deployer" && google_service_account.deployer.account_id == "site-deployer"
+    error_message = "The explorables repository gets its own deployer, never the site's."
+  }
+  assert {
+    condition = (
+      google_cloud_run_v2_service_iam_member.explorables_deployer_deploy.role == "roles/run.developer"
+      && google_cloud_run_v2_service_iam_member.explorables_deployer_deploy.name == google_cloud_run_v2_service.explorables.name
+      && google_cloud_run_v2_service_iam_member.explorables_deployer_deploy.member == "serviceAccount:${google_service_account.explorables_deployer.email}"
+    )
+    error_message = "run.developer on the explorables service only, which cannot change IAM."
+  }
+  assert {
+    condition = (
+      google_artifact_registry_repository.explorables.repository_id == "explorables"
+      && google_artifact_registry_repository_iam_member.explorables_deployer_push.role == "roles/artifactregistry.writer"
+      && google_artifact_registry_repository_iam_member.explorables_deployer_push.repository == google_artifact_registry_repository.explorables.name
+    )
+    error_message = "It pushes to its own image repository, never the site's."
+  }
+  assert {
+    condition     = length(google_artifact_registry_repository.explorables.cleanup_policies) == 3 && google_artifact_registry_repository.explorables.cleanup_policy_dry_run == false
+    error_message = "Its image repository has the site's cleanup rules, live tag kept, so storage stays in the free allowance."
+  }
+  assert {
+    condition     = google_artifact_registry_repository_iam_member.cloud_run_pulls_explorables.role == "roles/artifactregistry.reader" && google_artifact_registry_repository_iam_member.cloud_run_pulls_explorables.repository == google_artifact_registry_repository.explorables.name
+    error_message = "Cloud Run's service agent can pull from it."
+  }
+  assert {
+    condition     = google_service_account_iam_member.explorables_deployer_acts_as_runtime.service_account_id == google_service_account.runtime.name && google_service_account_iam_member.explorables_deployer_acts_as_runtime.role == "roles/iam.serviceAccountUser"
+    error_message = "It may act only as the empty runtime account the service runs as."
+  }
+  assert {
+    condition = (
+      strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "assertion.repository_id == \"77\"")
+      && !strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "\"42\"")
+      && strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "assertion.ref == \"refs/heads/main\"")
+      && strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "assertion.environment == \"cloud-run\"")
+      && strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "assertion.event_name in [\"push\", \"workflow_dispatch\"]")
+    )
+    error_message = "The provider admits only that repository, on main, in the cloud-run environment, from a push or a manual run."
+  }
+  assert {
+    condition = (
+      length(regexall("workflows/", google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition)) == 2
+      && strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "kphutt/explorables/.github/workflows/ci.yml@refs/heads/main")
+      && strcontains(google_iam_workload_identity_pool_provider.github_explorables[0].attribute_condition, "kphutt/explorables/.github/workflows/rollback.yml@refs/heads/main")
+    )
+    error_message = "Only its ci.yml and rollback.yml may federate."
+  }
+  assert {
+    condition = (
+      google_iam_workload_identity_pool_provider.github_explorables[0].workload_identity_pool_provider_id == "github-explorables"
+      && google_iam_workload_identity_pool_provider.github_explorables[0].workload_identity_pool_id == google_iam_workload_identity_pool.github.workload_identity_pool_id
+    )
+    error_message = "Its own provider, in the same pool as the site's."
+  }
+  assert {
+    condition     = google_service_account_iam_member.explorables_github_becomes_deployer[0].service_account_id == google_service_account.explorables_deployer.name && endswith(google_service_account_iam_member.explorables_github_becomes_deployer[0].member, "/attribute.repository_id/77")
+    error_message = "Only identities from that repository id may become the explorables deployer."
+  }
+  assert {
+    condition     = endswith(google_service_account_iam_member.github_becomes_deployer.member, "/attribute.repository_id/42") && !strcontains(google_iam_workload_identity_pool_provider.github.attribute_condition, "\"77\"")
+    error_message = "The site's deployer and provider are unchanged: the explorables repository can never become the site's deployer."
+  }
+  assert {
+    condition = (
+      output.explorables_github_variables["CLOUD_RUN_SERVICE"] == "explorables"
+      && output.explorables_github_variables["ARTIFACT_REPO"] == "explorables"
+      && output.explorables_github_variables["WIF_PROVIDER"] != ""
+    )
+    error_message = "The explorables repository's variables name its service, its image repository and its provider."
+  }
+}
+
+run "an_explorables_repository_id_that_is_not_a_number_is_refused" {
+  command = plan
+
+  variables {
+    explorables_github_repository_id = "kphutt/explorables"
+  }
+
+  expect_failures = [var.explorables_github_repository_id]
 }

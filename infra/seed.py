@@ -4,6 +4,8 @@
     python infra/seed.py project   # create the project, link billing, enable APIs, state bucket
     python infra/seed.py env       # create the `cloud-run` GitHub environment, main only
     python infra/seed.py vars      # after `tofu apply`: set the deploy workflow's repo variables
+    python infra/seed.py explorables-env    # the same two steps for the explorables repository
+    python infra/seed.py explorables-vars   # (explorables_github_repository_id in site.tfvars)
 
 Each prints the exact commands it would run and runs nothing. Add --apply to run them.
 Reads project_id, region and github_repository from infra/site.tfvars, the committed file
@@ -16,6 +18,11 @@ Why these are not in OpenTofu: the project and its billing link are what OpenTof
 inside, the state bucket is where OpenTofu keeps its memory, and the APIs must be on
 before OpenTofu can call them. The environment and the repository variables live in
 GitHub, not GCP.
+
+explorables-env and explorables-vars do the same for the explorables repository
+(explorables-repo.tf): the same `cloud-run` environment, main only, and that repository's
+variables from `tofu output explorables_github_variables`. Run them once the repository
+exists and explorables_github_repository_id is applied.
 """
 
 from __future__ import annotations
@@ -141,21 +148,35 @@ def project(apply: bool) -> None:
     print("  python scripts/apply_infra.py --run seed-vars")
 
 
-def variables(apply: bool) -> None:
+# The explorables repository (explorables-repo.tf). Its default matches variables.tf.
+EXPLORABLES_REPOSITORY = "kphutt/explorables"
+
+
+def explorables_repository() -> str:
+    return tfvars().get("explorables_github_repository", EXPLORABLES_REPOSITORY)
+
+
+def variables(apply: bool, output: str = "github_variables", repo: str | None = None) -> None:
     tofu = tool("tofu")
     gh = tool("gh")
-    out = subprocess.run([tofu, "output", "-json", "github_variables"], cwd=INFRA,
+    out = subprocess.run([tofu, "output", "-json", output], cwd=INFRA,
                          capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"tofu output failed (has `tofu apply` run?):\n{out.stderr}")
-    v = tfvars()
-    repo = v["github_repository"]
+    repo = repo or tfvars()["github_repository"]
+    values = json.loads(out.stdout)
+    # An empty WIF_PROVIDER means the provider does not exist yet (for the explorables
+    # repository: explorables_github_repository_id is not set). Setting the variables then
+    # would only leave the deploy skipped, so stop and say why.
+    if not values.get("WIF_PROVIDER"):
+        sys.exit(f"WIF_PROVIDER in `tofu output {output}` is empty: set explorables_github_repository_id "
+                 "in infra/site.tfvars, then plan and apply first.")
     print(f"Repository variables on {repo}:")
-    for name, value in json.loads(out.stdout).items():
+    for name, value in values.items():
         run([gh, "variable", "set", name, "--repo", repo, "--body", value], apply)
 
 
-def environment(apply: bool) -> None:
+def environment(apply: bool, repo: str | None = None) -> None:
     """Create or update the deploy environment so only main can deploy to it.
 
     This owns the environment's whole config: the PUT sends only the branch policy, so a
@@ -165,7 +186,7 @@ def environment(apply: bool) -> None:
     other branch or tag rule is removed, so the result is the same however often it runs.
     """
     gh = tool("gh")
-    repo = tfvars()["github_repository"]
+    repo = repo or tfvars()["github_repository"]
     env = f"repos/{repo}/environments/{ENVIRONMENT}"
     rules = f"{env}/deployment-branch-policies"
 
@@ -195,7 +216,13 @@ def environment(apply: bool) -> None:
 def main() -> int:
     args = [a for a in sys.argv[1:] if a != "--apply"]
     apply = "--apply" in sys.argv[1:]
-    steps = {"project": project, "env": environment, "vars": variables}
+    steps = {
+        "project": project,
+        "env": environment,
+        "vars": variables,
+        "explorables-env": lambda apply: environment(apply, explorables_repository()),
+        "explorables-vars": lambda apply: variables(apply, "explorables_github_variables", explorables_repository()),
+    }
     if len(args) != 1 or args[0] not in steps:
         sys.exit(__doc__)
     if not apply:

@@ -16,6 +16,7 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `test-domain.tf` | The test name: domain mapping, its DNS record at Cloudflare, ownership proof. Off by default |
 | `site-domain.tf` | The live names: ownership proof for `kphutt.com`, and the mappings for `kphutt.com` and `www` |
 | `explorables.tf` | The explorables service and its mapping for `explorables.kphutt.com` |
+| `explorables-repo.tf` | The explorables repository's own deployer, image repository and WIF provider |
 | `outputs.tf` | The values the deploy workflow needs as repository variables |
 | `../infra-apply.toml` | Settings for `scripts/apply_infra.py`: backend, 1Password references, steps |
 | `seed.py` | The one-time steps OpenTofu cannot do: the project, the GitHub environment, the repository variables |
@@ -23,7 +24,7 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `tests/dns.tftest.hcl` | Offline tests that pin every production record's value |
 | `tests/test-domain.tftest.hcl` | Offline tests that the test name can never be `kphutt.com` or `www` |
 | `tests/site-domain.tftest.hcl` | Offline tests of the live names' ownership record and mappings |
-| `tests/explorables.tftest.hcl` | Offline tests of the explorables service, mapping, deploy rights, cutoff and alerts |
+| `tests/explorables.tftest.hcl` | Offline tests of the explorables service, mapping, deploy rights (both repositories'), cutoff and alerts |
 
 ## Who changes what
 
@@ -85,13 +86,16 @@ After the apply it plans again and says whether the infrastructure now matches t
 Optional steps after the apply:
 
 - `--run seed-vars`: `seed.py vars --apply`, after an apply that changed an output.
+- `--run seed-explorables-env` and `--run seed-explorables-vars`: the same two hand-offs for
+  the explorables repository (`explorables-repo.tf`): its `cloud-run` environment, `main`
+  only, and its repository variables.
 - `--deploy`: start `hugo.yml` on `main`, so a service created on the placeholder image gets
   the real one.
 - `--check-live MINUTES`: wait for every domain mapping in the project to be Ready and serve
   a valid certificate, then run `scripts/smoke.py` and `scripts/smoke_explorables.py`
   against the live names (`[live.smoke]` in `infra-apply.toml`). Needs `gcloud`.
 
-Exit codes: 0 done and clean, 2 a command failed, 3 the plan was refused, 4 applied but the
+Exit codes: 0 done and clean, 1 usage or setup error, 2 a command failed, 3 the plan was refused, 4 applied but the
 second plan still shows changes, 5 the live check failed.
 
 The 1Password items it reads (`infra-apply.toml`, `[[secret]]`) are made once: the Cloudflare
@@ -353,6 +357,47 @@ Turning it on, in this order:
    service `site` the main site. It fails, changing nothing, while `EXPLORABLES_SERVICE` is
    unset.
 4. A pull request writes the new record's Cloudflare id into `dns.tf` in place of `null`.
+
+### The explorables repository (`explorables-repo.tf`)
+
+Explorables are moving to their own repository, `kphutt/explorables`
+(`explorables_github_repository`), which deploys the same service with its own identity. That
+identity is the narrowest that can deploy it:
+
+- **Its own service account,** `explorables-deployer`, never the site's `site-deployer`. It
+  gets `run.developer` on the explorables service only, `artifactregistry.writer` on its own
+  image repository only, and `serviceAccountUser` on the empty runtime account the service runs
+  as. Nothing on the site's service or image repository, IAM, DNS or the project.
+- **Its own image repository,** `explorables`, with the site's cleanup rules, so nothing pushed
+  or tagged from that repository can touch the site's images.
+- **Its own WIF provider,** `github-explorables`, in the same pool. Its condition admits only
+  that repository by numeric id, on `main`, from its `ci.yml` and `rollback.yml`, in the
+  `cloud-run` environment, from a push or a manual run. The site's provider and its deployer
+  binding are unchanged, and neither provider admits the other repository's id, so neither
+  repository can become the other's deployer.
+
+The service keeps running as the site's runtime account rather than one of its own. That
+account holds no permissions, and a second one would also need the cost cutoff to act as it.
+
+Until `explorables_github_repository_id` is set, the provider and the binding are not
+created, `WIF_PROVIDER` in `tofu output explorables_github_variables` is empty, and that
+repository's deploy job skips itself. The site's own explorables deploy keeps working
+alongside, until this repository's explorables jobs are removed.
+
+Turning it on, once the repository exists:
+
+1. `explorables_github_repository_id` in `site.tfvars` holds its id, from
+   `gh api repos/kphutt/explorables --jq .id`.
+2. `python scripts/apply_infra.py --run seed-explorables-env --run seed-explorables-vars`.
+   The apply creates the deployer, the image repository, the provider and their bindings. The
+   two steps then create that repository's `cloud-run` environment, `main` only, and set its
+   six repository variables. Its next merge to `main`, or a manual run of its `ci.yml`,
+   deploys.
+
+After its first good deploy, stop this repository deploying explorables: a pull request removes
+`explorables/` and its jobs here, `deployer_deploys_explorables` and `EXPLORABLES_SERVICE`.
+Until then both repositories can deploy the same service, and a merge to either one's `main`
+replaces what the other deployed.
 
 ## Alerts (`uptime.tf`)
 

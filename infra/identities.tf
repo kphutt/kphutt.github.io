@@ -1,4 +1,5 @@
-# Two service accounts, never shared.
+# Two service accounts, never shared. (The explorables repository has a third, its own
+# deployer, in explorables-repo.tf.)
 #
 #   runtime   what the Cloud Run service runs as. It needs no permissions: the server
 #             only reads files baked into its own image. Running as a dedicated empty
