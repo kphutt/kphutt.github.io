@@ -139,6 +139,20 @@ response that is not HTML. `layouts/partials/extend_head.html` keeps only a
 Do not add security headers to the page with `http-equiv`. Most of them do nothing there, and a
 CSP copy would be a second policy to keep in step. Add or change a header in `server/sws.toml`.
 
+### Search and AI discovery
+- `layouts/robots.txt` welcomes every crawler for search, live AI answers and AI training
+  (`Content-Signal: search=yes, ai-input=yes, ai-train=yes`). Its comment says how to set
+  training back to no.
+- `layouts/partials/templates/schema_json.html` writes the JSON-LD. The author is one Person,
+  `https://kphutt.com/#person`, described on the home page from `params.description` and
+  `[params.schema]` in `hugo.toml`, and referenced by that @id everywhere else, explorables
+  included. `params.schema.sameAs` is the one list of profiles; `llms.txt` prints the same list.
+- JSON-LD is the only `<script>` the build may contain, and only as plain data:
+  `scripts/check_build.py` fails a block that is not a JSON object or array.
+- Each page's lastmod comes from git (`enableGitInfo`), so the build needs full history.
+- After a deploy, `scripts/indexnow.py` tells IndexNow engines which pages changed. The key
+  in `static/indexnow.txt` is public by design.
+
 ### Other settled decisions
 - **Cloudflare's "Manage your robots.txt" stays off.** This repo generates `robots.txt` from
   `layouts/robots.txt`, under review. Letting Cloudflare manage it too would put two systems on
