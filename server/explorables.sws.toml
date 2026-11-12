@@ -1,5 +1,5 @@
 # static-web-server configuration for the container that serves explorables.kphutt.com.
-# https://static-web-server.net -- v2, the same pinned image as the site (explorables.Dockerfile).
+# https://static-web-server.net -- v3, the same pinned image as the site (explorables.Dockerfile).
 #
 # Explorables are standalone interactive pages: their own JavaScript, SVG, styles, images
 # and fonts, from explorables/. They live on their own origin so that kphutt.com keeps
@@ -33,15 +33,53 @@ cache-control-headers = false
 # JavaScript, SVG, XML and plain text. Fonts are already compressed (woff2). The gate requires
 # it, and scripts/smoke_explorables.py checks each type comes back compressed.
 compression = true
+# Off, as in server/sws.toml: nothing is pre-compressed, and v3 turns this on by default.
+compression-static = false
+# Closes a connection with no reads or writes for this many seconds; this is the
+# GHSA-2fch-9x9r-mxmv fix. v3's default is 30, but 0 disables it, so it is set explicitly.
+idle-timeout = 30
 directory-listing = false
 # Nothing here needs a dot-file, so none is served. scripts/check_explorables.py also fails
-# the build if one is in the output.
-ignore-hidden-files = true
-disable-symlinks = true
+# the build if one is in the output, and requires this line, since v3 only warns about
+# keys it does not know (such as v2's ignore-hidden-files).
+include-hidden = false
+follow-symlinks = false
 
 # /<slug> redirects to /<slug>/, so a page's relative links resolve inside its folder.
 redirect-trailing-slash = true
 index-files = "index.html"
+
+# Everything below is a server feature explorables do not use, turned off. Most are off by
+# default already. They are written out because a value in this file overrides both the
+# binary's defaults and any SERVER_* environment variable, so nothing outside the file can
+# turn one on. Each is code that reads the request, so off means less code that can have a
+# bug. scripts/check_explorables.py fails the build if one is turned on, left out, or misspelled:
+# v3 only warns about a key it does not know.
+health = false
+metrics = false
+maintenance-mode = false
+# Content negotiation that serves a .md file for Accept: text/markdown.
+accept-markdown = false
+# No origin gets CORS headers.
+cors-allow-origins = ""
+basic-auth = ""
+# Off, so a missing page is a 404, not a 200 with a fallback page.
+page-fallback = ""
+directory-listing-download = []
+# TLS ends at Google's front end, which also redirects http:// to https://.
+tls = false
+http2 = false
+https-redirect = false
+use-relative-root = false
+# Off, on by default. ETags change how If-None-Match, If-Match and If-Range are answered.
+# A browser still revalidates with If-Modified-Since against Last-Modified.
+etag = false
+# Cloud Run's own request log already records the client. These would log request headers.
+log-remote-address = false
+log-x-real-ip = false
+log-forwarded-for = false
+# On, as by default. It adds charset=utf-8 to a text response that has none (robots.txt), and reads only the response, not the request.
+text-charset = true
 
 [advanced]
 

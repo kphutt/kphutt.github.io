@@ -50,6 +50,6 @@ provider "google-beta" {
 }
 
 # The API token comes from the CLOUDFLARE_API_TOKEN environment variable, never from a file
-# in the repository or from terraform.tfvars. infra/README.md lists the permissions it needs.
+# in the repository or from a .tfvars file. infra/README.md lists the permissions it needs.
 # dns.tf's production records are always planned, so every plan needs the token.
 provider "cloudflare" {}

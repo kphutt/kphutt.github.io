@@ -122,12 +122,16 @@ years, no `includeSubDomains`, no `preload`), X-Content-Type-Options, Referrer-P
 Permissions-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy. The policy is
 `script-src 'none'` with no hashes and no `'unsafe-inline'`, because the site has no inline
 code: `layouts/partials/head.html` and `footer.html` are copies of the theme's files, with
-the theme's inline scripts and style removed.
+the theme's inline scripts and style removed. `connect-src` names one file,
+`https://kphutt.com/robots.txt`, because Lighthouse and DevTools fetch robots.txt from inside
+the page; the gate accepts that exact URL and nothing broader.
 
 `scripts/check_build.py` is the gate. It fails the build if inline code comes back, or if the
 header policy in `server/sws.toml` is weaker than its floor on any directive. It also fails if a
 required header goes missing or the page loads anything from another origin. And it fails if
-the theme changes a file those copies were made from. `scripts/smoke.py` checks that a
+the theme changes a file those copies were made from. It fails, for both servers, if a
+static-web-server feature the sites do not use is turned on, left to its default, or its key
+misspelled (`SERVER_FEATURES_OFF` in `scripts/check_build.py`). `scripts/smoke.py` checks that a
 running server sends exactly those headers.
 
 The page carries no Content-Security-Policy meta tag. The header is the only policy, so there
@@ -136,6 +140,22 @@ response that is not HTML. `layouts/partials/extend_head.html` keeps only a
 `<meta name="referrer">` copy of the Referrer-Policy, with the same value as the header.
 Do not add security headers to the page with `http-equiv`. Most of them do nothing there, and a
 CSP copy would be a second policy to keep in step. Add or change a header in `server/sws.toml`.
+
+### Search and AI discovery
+- `layouts/robots.txt` welcomes every crawler for search, live AI answers and AI training:
+  one catch-all group that allows everything. Its comment says how to stop training (a
+  Disallow group per training crawler).
+- `layouts/partials/templates/schema_json.html` writes the JSON-LD. The author is one Person,
+  `https://kphutt.com/#person`, described on the home page from `params.description` and
+  `[params.schema]` in `hugo.toml`, and referenced by that @id everywhere else on this site.
+  The owner's other sites, such as explorables.kphutt.com, can reference the same @id from
+  their own repositories; this repo's `explorables/` copy carries no JSON-LD.
+  `params.schema.sameAs` is the one list of profiles; `llms.txt` prints the same list.
+- JSON-LD is the only `<script>` the build may contain, and only as plain data:
+  `scripts/check_build.py` fails a block that is not a JSON object or array.
+- Each page's lastmod comes from git (`enableGitInfo`), so the build needs full history.
+- After a deploy, `scripts/indexnow.py` tells IndexNow engines which pages changed. The key
+  in `static/indexnow.txt` is public by design.
 
 ### Other settled decisions
 - **Cloudflare's "Manage your robots.txt" stays off.** This repo generates `robots.txt` from

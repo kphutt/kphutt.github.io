@@ -11,8 +11,9 @@
 #
 # The base image must stay the one the site's Dockerfile pins, digest included.
 # scripts/check_explorables.py fails if the two FROM lines differ, so a Dependabot update
-# to one has to be carried to the other.
-FROM ghcr.io/static-web-server/static-web-server:2.44.1@sha256:94618e3d17802265a21926217e6f9e7832b311b6fbf5933684001739fafed06a
+# to one has to be carried to the other. It is on a beta for the reason the site's
+# Dockerfile gives.
+FROM ghcr.io/static-web-server/static-web-server:3.0.0-beta.2@sha256:dd6db18272872154f1d287cc5b565626379339c34171263aa0a97b68c78f4ac3
 
 COPY server/explorables.sws.toml /etc/sws.toml
 COPY public-explorables/ /public/

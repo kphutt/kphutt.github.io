@@ -1,5 +1,6 @@
 # static-web-server configuration for the container that serves the site on Cloud Run.
-# https://static-web-server.net -- v2, the stable line. The Dockerfile pins the exact image.
+# https://static-web-server.net -- v3 (a beta, for a security fix; the Dockerfile says why and
+# pins the exact image).
 #
 # The server only reads files. Hugo built them into the image at build time, so nothing
 # here runs per request except picking a file and attaching headers.
@@ -33,17 +34,57 @@ security-headers = false
 cache-control-headers = false
 
 compression = true
+# Off, as it was in v2. Nothing in the image is pre-compressed, and v3 turns this on by default.
+compression-static = false
+# Closes a connection with no reads or writes for this many seconds; this is the
+# GHSA-2fch-9x9r-mxmv fix. v3's default is 30, but 0 disables it, so it is set explicitly.
+idle-timeout = 30
 directory-listing = false
-# Off, because the server has no way to exempt one dot-directory and RFC 9116 puts
+# On, because the server has no way to exempt one dot-directory and RFC 9116 puts
 # security.txt at /.well-known/. Hidden files are still not served: the image holds only
 # the built site, and scripts/check_build.py fails the build if any dot-file or dot-folder
-# other than .well-known/security.txt is in it.
-ignore-hidden-files = false
-disable-symlinks = true
+# other than .well-known/security.txt is in it. (v3 renamed v2's ignore-hidden-files and
+# disable-symlinks, and only warns about keys it does not know, so the old names would be
+# dropped without failing: scripts/smoke.py is what catches a missing security.txt.)
+include-hidden = true
+follow-symlinks = false
 
 # Hugo's URLs end in a slash, and /posts redirects to /posts/. Keep that.
 redirect-trailing-slash = true
 index-files = "index.html"
+
+# Everything below is a server feature this site does not use, turned off. Most are off by
+# default already. They are written out because a value in this file overrides both the
+# binary's defaults and any SERVER_* environment variable, so nothing outside the file can
+# turn one on. Each is code that reads the request, so off means less code that can have a
+# bug. scripts/check_build.py fails the build if one is turned on, left out, or misspelled:
+# v3 only warns about a key it does not know.
+health = false
+metrics = false
+maintenance-mode = false
+# Content negotiation that serves a .md file for Accept: text/markdown.
+accept-markdown = false
+# No origin gets CORS headers.
+cors-allow-origins = ""
+basic-auth = ""
+# Off, so a missing page is a 404, not a 200 with a fallback page.
+page-fallback = ""
+directory-listing-download = []
+# TLS ends at Google's front end, which also redirects http:// to https://.
+tls = false
+http2 = false
+https-redirect = false
+use-relative-root = false
+# Off, on by default. ETags change how If-None-Match, If-Match and If-Range are answered.
+# A browser still revalidates with If-Modified-Since against Last-Modified.
+etag = false
+# Cloud Run's own request log already records the client. These would log request headers.
+log-remote-address = false
+log-x-real-ip = false
+log-forwarded-for = false
+# On, as by default. It adds charset=utf-8 to a text response that has none (robots.txt,
+# llms.txt), and reads only the response, not the request.
+text-charset = true
 
 [advanced]
 
@@ -65,7 +106,13 @@ source = "**"
 # Starts from default-src 'none' and allows only what the built site loads: its own
 # stylesheet and its own images. No 'unsafe-inline' and no hashes, because there is no
 # inline code (layouts/partials/head.html and footer.html remove the theme's).
-Content-Security-Policy = "default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+#
+# connect-src names one file, robots.txt, and nothing else. Lighthouse and Chrome DevTools
+# fetch robots.txt from inside the page, so the page's connect-src applies; without this
+# they report robots.txt as unreachable. The page runs no script, so nothing else can make
+# that request, and the file is public anyway. A URL with a path matches only that exact
+# path. scripts/check_build.py accepts this one URL and nothing broader.
+Content-Security-Policy = "default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self'; connect-src https://kphutt.com/robots.txt; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
 # Two years. Deliberately no includeSubDomains and no preload: both are hard to undo, and
 # other services will live on subdomains of this domain. Adding either needs a decision.
 Strict-Transport-Security = "max-age=63072000"

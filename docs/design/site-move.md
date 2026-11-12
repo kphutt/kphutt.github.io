@@ -34,7 +34,8 @@ GitHub Actions (on merge to main, keyless via Workload Identity Federation)
   -> promote by exact revision name, or leave the old revision serving
 ```
 
-- **Server:** static-web-server v2 (the stable line). Its config file sets every header, so
+- **Server:** static-web-server v3, on 3.0.0-beta.2 for a security fix until 3.0.0
+  ships (the Dockerfile says why). Its config file sets every header, so
   the policy lives in the repo next to the code it describes: `server/sws.toml`.
 - **Infra:** a flat OpenTofu folder `infra/` (no modules), state in a versioned GCS bucket,
   in its own GCP project so nothing can cross with other services. It holds Artifact

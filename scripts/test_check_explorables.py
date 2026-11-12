@@ -389,7 +389,7 @@ class Layout(GateTest):
         self.assertFails("broken internal reference")
 
     def test_different_base_images(self):
-        self.tree.edit(self.tree.dockerfiles[1], "2.44.1@", "2.44.0@")
+        self.tree.edit(self.tree.dockerfiles[1], "3.0.0-beta.2@", "3.0.0-beta.1@")
         self.assertFails("same pinned image")
 
 
@@ -597,8 +597,13 @@ class Headers(GateTest):
         self.assertFails("page404")
 
     def test_hidden_files_served(self):
-        self.tree.edit(self.tree.config, "ignore-hidden-files = true", "ignore-hidden-files = false")
-        self.assertFails("ignore-hidden-files")
+        self.tree.edit(self.tree.config, "include-hidden = false", "include-hidden = true")
+        self.assertFails("include-hidden")
+
+    def test_v2_hidden_files_key(self):
+        # v3 only warns about a key it does not know, so the v2 spelling must not pass.
+        self.tree.edit(self.tree.config, "include-hidden = false", "ignore-hidden-files = true")
+        self.assertFails("include-hidden")
 
     def test_directory_listing(self):
         self.tree.edit(self.tree.config, "directory-listing = false", "directory-listing = true")

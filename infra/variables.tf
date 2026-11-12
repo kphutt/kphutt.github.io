@@ -1,5 +1,6 @@
-# Inputs, filled in infra/terraform.tfvars (git-ignored); the shape is
-# in terraform.tfvars.example. Nothing account-specific has a default.
+# Inputs. The non-secret values are in infra/site.tfvars (committed); the personal ones,
+# alert_email and billing_account, come from 1Password as TF_VAR_* (infra-apply.toml).
+# Nothing account-specific has a default here.
 
 variable "project_id" {
   description = "The GCP project that hosts only this site."

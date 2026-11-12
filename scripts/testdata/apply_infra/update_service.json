@@ -1,0 +1,45 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.13.9",
+ "resource_changes": [
+  {
+   "address": "google_cloud_run_v2_service.site",
+   "mode": "managed",
+   "type": "google_cloud_run_v2_service",
+   "name": "site",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_project_iam_member.deployer",
+   "mode": "managed",
+   "type": "google_project_iam_member",
+   "name": "deployer",
+   "change": {
+    "actions": [
+     "no-op"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "data.google_project.this",
+   "mode": "managed",
+   "type": "data",
+   "name": "google_project",
+   "change": {
+    "actions": [
+     "read"
+    ],
+    "before": null,
+    "after": null
+   }
+  }
+ ]
+}

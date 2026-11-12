@@ -23,11 +23,12 @@ debug.log
 *.pem
 *.key
 
-# OpenTofu: provider cache, local state and plans, and the operator's variables. The
-# provider lock file (infra/.terraform.lock.hcl) is committed.
+# OpenTofu: provider cache, local state and plans, and any local variable file. The provider
+# lock file (infra/.terraform.lock.hcl) and infra/site.tfvars, the settings every plan uses,
+# are committed.
 .terraform/
 *.tfstate
 *.tfstate.*
 *.tfplan
 *.tfvars
-!*.tfvars.example
+!/infra/site.tfvars

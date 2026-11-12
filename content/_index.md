@@ -2,7 +2,7 @@
 title: "Karsten Huttelmaier"
 # Without this the theme falls back to summarising the page body, which produced a
 # 500-character twitter:description that link previews truncate mid-sentence.
-description: "Identity and security systems. Notes on what I find."
+description: "I build identity and security infrastructure."
 ---
 
 I build identity and security systems like service identity, PKI, OAuth and OIDC. I wrote code for years, consulted on human identity systems, then worked on Applied Cryptography at AWS and identity infrastructure at Snowflake.
@@ -44,6 +44,8 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 | [Inbox Shepherd](https://github.com/kphutt/inbox-shepherd) | Tame a noisy inbox by classifying email the way you would if you had time |
 | [Identity Lab](https://github.com/kphutt/identity-lab) | Learn identity protocols by running them, not reading about them |
 | [Text Adventure](https://github.com/kphutt/text-adventure-v2) | A dungeon crawler in Go, because not everything has to be serious |
+
+Interactive pages that go with posts on this site live at [explorables.kphutt.com](https://explorables.kphutt.com/).
 
 ---
 

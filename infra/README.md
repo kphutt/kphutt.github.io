@@ -7,6 +7,7 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 |---|---|
 | `versions.tf` | OpenTofu and provider pins; the partial GCS backend |
 | `variables.tf` | Inputs; account-specific ones have no default |
+| `site.tfvars` | The values every plan uses. Committed; nothing secret or personal |
 | `cloud-run.tf` | The Cloud Run service (min instances 0) and public access |
 | `artifact-registry.tf` | The image repository, with a cleanup policy |
 | `identities.tf` | The runtime and deployer service accounts, and Workload Identity Federation |
@@ -17,6 +18,7 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `explorables.tf` | The explorables service and its mapping for `explorables.kphutt.com` |
 | `explorables-repo.tf` | The explorables repository's own deployer, image repository and WIF provider |
 | `outputs.tf` | The values the deploy workflow needs as repository variables |
+| `../infra-apply.toml` | Settings for `scripts/apply_infra.py`: backend, 1Password references, steps |
 | `seed.py` | The one-time steps OpenTofu cannot do: the project, the GitHub environment, the repository variables |
 | `tests/plan.tftest.hcl` | Offline plan tests with mocked providers |
 | `tests/dns.tftest.hcl` | Offline tests that pin every production record's value |
@@ -27,7 +29,8 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 ## Who changes what
 
 - **OpenTofu owns the infrastructure.** Every change lands through a reviewed pull
-  request, and is applied by hand from a dev machine. CI cannot: the deployer
+  request, and is applied from a dev machine with `scripts/apply_infra.py` (see
+  "Applying"). CI cannot: the deployer
   identity it gets can push an image and deploy a revision of the site's service or the
   explorables service, and nothing else.
 - **Deploying is trusted to `main`.** The Google identity accepts only the
@@ -48,32 +51,80 @@ mise exec -- tofu validate
 mise exec -- tofu test
 ```
 
+## Applying
+
+One command plans, checks and applies, from the repository root on any machine:
+
+```bash
+python scripts/apply_infra.py --plan-only   # plan and check, apply nothing
+python scripts/apply_infra.py               # plan, check, apply, then plan again
+```
+
+Nothing has to be set up by hand first. The settings are committed: `infra/site.tfvars`
+holds every value a plan needs that is neither secret nor personal, and `infra-apply.toml`
+names the state backend and the 1Password references for the rest (the Cloudflare token,
+`alert_email` and `billing_account`). The script reads all of them in one `op inject` call,
+so a run asks 1Password once. A variable already set in the environment is used instead.
+Secrets reach only OpenTofu's environment, and are never printed or written to a file. The
+plan file goes in a temporary folder that is deleted when the run ends.
+
+The script refuses a plan, and applies nothing, if it would delete, replace or forget a
+resource the command line does not name:
+
+```bash
+python scripts/apply_infra.py --allow-replace google_storage_bucket_object.cost_cutoff_source
+python scripts/apply_infra.py --allow-delete cloudflare_dns_record.test   # every instance of it
+```
+
+An address without an index names every instance of that resource, as `-target` does. An
+allowance that matches nothing in the plan also stops the run, because it means the plan is
+not the one you expected. Creates and in-place updates are applied without asking, so read
+the plan it prints (`--plan-only` first, when in doubt). `prevent_destroy` and the
+preconditions still apply underneath.
+
+After the apply it plans again and says whether the infrastructure now matches the code.
+Optional steps after the apply:
+
+- `--run seed-vars`: `seed.py vars --apply`, after an apply that changed an output.
+- `--run seed-explorables-env` and `--run seed-explorables-vars`: the same two hand-offs for
+  the explorables repository (`explorables-repo.tf`): its `cloud-run` environment, `main`
+  only, and its repository variables.
+- `--deploy`: start `hugo.yml` on `main`, so a service created on the placeholder image gets
+  the real one.
+- `--check-live MINUTES`: wait for every domain mapping in the project to be Ready and serve
+  a valid certificate, then run `scripts/smoke.py` and `scripts/smoke_explorables.py`
+  against the live names (`[live.smoke]` in `infra-apply.toml`). Needs `gcloud`.
+
+Exit codes: 0 done and clean, 2 a command failed, 3 the plan was refused, 4 applied but the
+second plan still shows changes, 5 the live check failed.
+
+The 1Password items it reads (`infra-apply.toml`, `[[secret]]`) are made once: the Cloudflare
+token as in "The test name", step 1, and an item `kphutt-site tofu` with the fields
+`alert_email` and `billing_account`. A local `infra/terraform.tfvars` is no longer needed.
+OpenTofu still loads one if it exists, so the script warns about it: delete it.
+
+`scripts/apply_infra.py` is the same file in every repository that uses it; everything that
+differs between them is in `infra-apply.toml`. Fix it in one place and copy it.
+
 ## First-time setup (once)
 
 Every step is a command from this repository. The only things done outside it are signing
 in and creating the Cloudflare token.
 
-1. Copy `terraform.tfvars.example` to `terraform.tfvars` (git-ignored) and fill it in,
-   including `cloudflare_zone_id`.
+1. Check the values in `infra/site.tfvars`, and create the 1Password items `infra-apply.toml`
+   names (see "Applying"). For another account or project, change both in a pull request.
 2. Sign in with an account that can create projects and use the billing account:
    `gcloud auth login` and `gcloud auth application-default login`.
 3. `python infra/seed.py project` prints what it will do. Read it, then run it again with
-   `--apply`. It creates the project, links billing, enables the APIs and creates the state
+   `--apply`, with `TF_VAR_billing_account` set from its 1Password reference. It creates the project, links billing, enables the APIs and creates the state
    bucket.
-4. From `infra/`, with `CLOUDFLARE_API_TOKEN` set (every plan needs it, see "Production
-   DNS"; the token is created as in "The test name", step 1):
-   ```bash
-   mise exec -- tofu init -backend-config="bucket=<project_id>-tofu-state" -backend-config="prefix=site"
-   mise exec -- tofu plan -out=site.tfplan
-   mise exec -- tofu apply site.tfplan
-   ```
-   This creates the service on Google's placeholder image, so `*.run.app` answers with a
+4. `python scripts/apply_infra.py` (see "Applying"). This creates the service on Google's placeholder image, so `*.run.app` answers with a
    hello page until the first deploy.
 5. `python infra/seed.py env --apply` creates the `cloud-run` environment, or updates it,
    so that only `main` can deploy to it. It needs `gh` signed in as a repository admin.
    (The first deploy would create the environment anyway, without that limit; the Google
    side refuses anything but `main` either way.)
-6. `mise exec -- python infra/seed.py vars --apply` sets the seven repository variables the
+6. `python scripts/apply_infra.py --run seed-vars` sets the seven repository variables the
    deploy workflow reads. The Cloud Run deploy job skips itself until `WIF_PROVIDER` is set,
    and the workflow still builds and checks the site.
 
@@ -99,10 +150,10 @@ Once, before turning it on:
    - Optional: an expiry date, and client IP filtering to your address.
 
    Keep it in the password manager and pass it to OpenTofu only as the environment
-   variable `CLOUDFLARE_API_TOKEN` (for example from a secrets manager at run time). It never goes in
-   `terraform.tfvars` or the repository.
-2. Copy the zone id from the kphutt.com Overview page in Cloudflare into
-   `cloudflare_zone_id` in `terraform.tfvars`. It is not a secret.
+   variable `CLOUDFLARE_API_TOKEN`; `scripts/apply_infra.py` reads it from the reference in
+   `infra-apply.toml`. It never goes in a `.tfvars` file or the repository.
+2. The zone id, from the kphutt.com Overview page in Cloudflare, is `cloudflare_zone_id` in
+   `infra/site.tfvars`. It is not a secret.
 3. Proving ownership uses Google's Site Verification API, which needs its own OAuth scope.
    Sign in for OpenTofu once more, with that scope added:
    ```bash
@@ -111,7 +162,9 @@ Once, before turning it on:
    If the project was seeded before this API was added to `seed.py`, run
    `python infra/seed.py project --apply` again: it is safe to re-run and enables it.
 
-Then set `test_domain_enabled = true` and plan and apply as in step 4. The apply:
+Then set `test_domain_enabled = true` in `infra/site.tfvars` in a pull request. Once it is
+merged, run `python scripts/apply_infra.py --check-live 60`. It only creates, so it needs no
+allowance. The apply:
 
 1. asks Google for an ownership token for the test name and creates the CNAME it names,
    under the test name (`<token>.next.kphutt.com`);
@@ -139,8 +192,16 @@ CNAME, because it has become a subdomain of a verified name, its check stops the
 `verify_test_hostname = false` and apply again. The test name then gets one CNAME to
 `ghs.googlehosted.com` instead.
 
-To switch it off, set `test_domain_enabled = false` and apply: the test name's records, the
-mapping and the ownership CNAME are removed. OpenTofu forgets Google's ownership record rather than
+To switch it off, set `test_domain_enabled = false` in `infra/site.tfvars` in a pull
+request. Once it is merged, allow exactly the test name's deletes:
+
+```bash
+python scripts/apply_infra.py --allow-delete cloudflare_dns_record.test --allow-delete google_cloud_run_domain_mapping.test --allow-delete cloudflare_dns_record.verification --allow-delete google_site_verification_web_resource.test
+```
+
+With `verify_test_hostname = false` there is no ownership record or proof to delete, so leave
+out the last two; otherwise the run stops on an allowance that matches nothing. The test
+name's records, the mapping and the ownership CNAME are removed. OpenTofu forgets Google's ownership record rather than
 deleting it, because Google's API refuses to delete it while the CNAME still exists. Google
 re-checks ownership from time to time and drops it once the CNAME is gone.
 
@@ -226,10 +287,10 @@ How a change flows:
 1. Edit the record's line in `dns.tf`, and the same value in `tests/dns.tftest.hcl`. The test
    repeats every value, so a change has to be made twice, on purpose.
 2. Open a pull request. `python scripts/check_infra.py` runs the offline checks.
-3. From `infra/`, with the token in the environment:
-   `mise exec -- tofu plan -out=site.tfplan`. Read it: it must change only the records you
-   meant to change.
-4. `mise exec -- tofu apply site.tfplan`, by hand, after review.
+3. After review and merge, `python scripts/apply_infra.py --plan-only`. Read it: it must
+   change only the records you meant to change.
+4. `python scripts/apply_infra.py`. A changed value is an update. A change that deletes a
+   record also needs `--allow-delete` with its address, after the unlock below.
 
 Never change these records in the Cloudflare dashboard: the next plan would put them back.
 
@@ -283,13 +344,15 @@ with a 409. `scripts/check_infra.py` refuses either change.
 
 Turning it on, in this order:
 
-1. Apply: from `infra/`, with `CLOUDFLARE_API_TOKEN` set, `mise exec -- tofu plan -out=site.tfplan`,
-   read it, then `mise exec -- tofu apply site.tfplan`. It creates the service on the
-   placeholder image, the mapping and the DNS record. Google issues the certificate once the
-   record resolves, usually within 15 minutes.
-2. `mise exec -- python infra/seed.py vars --apply` sets `EXPLORABLES_SERVICE`. Until then
-   the `explorables-deploy` job skips itself, and the site's deploy is unaffected either way.
-3. The next merge to `main`, or a manual run of `hugo.yml`, deploys the explorables image.
+1. `python scripts/apply_infra.py --run seed-vars --deploy`. The apply creates the service
+   on the placeholder image, the mapping and the DNS record. Google issues the certificate
+   once the record resolves, usually within 15 minutes.
+2. `--run seed-vars` sets `EXPLORABLES_SERVICE`. Until then the `explorables-deploy` job
+   skips itself, and the site's deploy is unaffected either way.
+3. `--deploy` starts `hugo.yml` on `main`, which deploys the explorables image (so would the
+   next merge to `main`). Once that run is done, `python scripts/apply_infra.py --check-live 60`
+   waits for the certificate and smoke-tests the live names, `https://explorables.kphutt.com`
+   included.
    After that, `rollback.yml` with service `explorables` rolls back a bad deploy, and with
    service `site` the main site. It fails, changing nothing, while `EXPLORABLES_SERVICE` is
    unset.
@@ -323,12 +386,13 @@ alongside, until this repository's explorables jobs are removed.
 
 Turning it on, once the repository exists:
 
-1. Add `explorables_github_repository_id = "<id>"` to `terraform.tfvars`, from
-   `gh api repos/kphutt/explorables --jq .id`. Plan, read, apply, as in step 1 above.
-2. `python infra/seed.py explorables-env --apply` creates that repository's `cloud-run`
-   environment, `main` only.
-3. `mise exec -- python infra/seed.py explorables-vars --apply` sets its six repository
-   variables. Its next merge to `main` deploys.
+1. `explorables_github_repository_id` in `site.tfvars` holds its id, from
+   `gh api repos/kphutt/explorables --jq .id`.
+2. `python scripts/apply_infra.py --run seed-explorables-env --run seed-explorables-vars`.
+   The apply creates the deployer, the image repository, the provider and their bindings. The
+   two steps then create that repository's `cloud-run` environment, `main` only, and set its
+   six repository variables. Its next merge to `main`, or a manual run of its `ci.yml`,
+   deploys.
 
 After its first good deploy, stop this repository deploying explorables: a pull request removes
 `explorables/` and its jobs here, `deployer_deploys_explorables` and `EXPLORABLES_SERVICE`.
@@ -347,10 +411,10 @@ certificate):
   means it has not been renewed yet. Each alert says what to do.
 
 `kphutt.com` and `www.kphutt.com` are watched by default, and `explorables.kphutt.com` by its own
-check, which a `terraform.tfvars` setting `uptime_hostnames` cannot drop. Google follows redirects and judges the final answer, so `www`, which
+check, which a setting of `uptime_hostnames` cannot drop. Google follows redirects and judges the final answer, so `www`, which
 redirects to the apex, is held to the final 200. That still proves its certificate handshake
 and that the redirect lands on a live page. Its certificate-expiry alert measures the apex's
-certificate. To watch another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
+certificate. To watch another name, add it to `uptime_hostnames` in `infra/site.tfvars`.
 
 Cost is $0: uptime checks get 1,000,000 free executions a month per billing account (this
 setup uses about 26,000 with three names), alerts on uptime metrics are not charged, and

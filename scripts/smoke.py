@@ -138,7 +138,13 @@ def main() -> int:
 
     # The first request may land on a cold instance, or on a tagged URL still being set up,
     # so it gets about thirty seconds of retries.
-    _, home = check("/", content_type="text/html", cache="public, max-age=300", attempts=10)
+    home_headers, home = check("/", content_type="text/html", cache="public, max-age=300", attempts=10)
+    # Proof that server/sws.toml's feature switches took effect, not just that the file says
+    # so: a renamed key is only warned about, and the server falls back to its default.
+    if "ETag" in home_headers:
+        failures.append("/: has an ETag header, so etag = false did not take effect")
+    check("/health", status=404)
+    check("/metrics", status=404)
 
     # Every page the sitemap promises must still be where it was.
     _, sitemap = check("/sitemap.xml", content_type="application/xml")
