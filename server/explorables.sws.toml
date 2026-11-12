@@ -1,0 +1,77 @@
+# static-web-server configuration for the container that serves explorables.kphutt.com.
+# https://static-web-server.net -- v2, the same pinned image as the site (explorables.Dockerfile).
+#
+# Explorables are standalone interactive pages: their own JavaScript, SVG, styles, images
+# and fonts, from explorables/. They live on their own origin so that kphutt.com keeps
+# script-src 'none'. A page here can run its own scripts, and nothing it does can reach the
+# main site's pages, because a browser keeps the two origins apart.
+#
+# THE SECURITY HEADERS BELOW ARE A POLICY, NOT TUNING. scripts/check_explorables.py reads
+# this file and fails the build if the Content-Security-Policy is weaker than its floor on
+# any directive, if it gains a connect-src, if HSTS gains includeSubDomains or preload, or
+# if a required header goes missing, X-Robots-Tag included. scripts/smoke_explorables.py
+# checks a running server sends exactly these values.
+
+[general]
+host = "0.0.0.0"
+port = 8080
+root = "/public"
+
+# Cloud Run already logs every request.
+log-level = "warn"
+
+# explorables/404.html. Without it the server would fall back to its built-in page, whose
+# inline <style> the CSP blocks. scripts/check_explorables.py requires the file and this
+# line, and scripts/smoke_explorables.py checks it is this page that comes back.
+page404 = "404.html"
+
+# Off, for the same reasons as server/sws.toml: the explicit headers below replace them.
+security-headers = false
+cache-control-headers = false
+
+compression = true
+directory-listing = false
+# Nothing here needs a dot-file, so none is served. scripts/check_explorables.py also fails
+# the build if one is in the output.
+ignore-hidden-files = true
+disable-symlinks = true
+
+# /<slug> redirects to /<slug>/, so a page's relative links resolve inside its folder.
+redirect-trailing-slash = true
+index-files = "index.html"
+
+[advanced]
+
+# Headers are applied in order, and a later match replaces an earlier value, so the
+# catch-all comes first and the narrower Cache-Control rule after it.
+
+# Every response, including the 404 page.
+[[advanced.headers]]
+source = "**"
+[advanced.headers.headers]
+# The site's policy, with three changes: script-src 'self' so a page can run its own
+# script files, font-src 'self' for bundled fonts, and Trusted Types, so a script cannot
+# hand a plain string to innerHTML or eval-like sinks. Still no 'unsafe-inline', no
+# hashes, no nonces and no other origin. No connect-src: default-src 'none' then blocks
+# fetch, XHR, WebSocket and beacons, so a page cannot call any API, this one included.
+Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; require-trusted-types-for 'script'"
+# As the site: two years, no includeSubDomains, no preload.
+Strict-Transport-Security = "max-age=63072000"
+X-Content-Type-Options = "nosniff"
+# Nothing a page links to learns which explorable sent the visitor.
+Referrer-Policy = "no-referrer"
+# The same list as server/sws.toml. scripts/check_explorables.py keeps the two equal.
+Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Resource-Policy = "same-origin"
+# Kept out of search results: these pages go with posts on kphutt.com, which is what a
+# search should find. A header, so it covers every file, not only pages with the meta tag.
+# robots.txt stays absent on purpose: a crawler that may not fetch a page never sees this.
+X-Robots-Tag = "noindex, nofollow"
+# File names here do not change when their content does, so everything stays short.
+Cache-Control = "public, max-age=300"
+
+# Bundled fonts change rarely, and a stale one only looks slightly different.
+[[advanced.headers]]
+source = "**/*.{woff2,woff}"
+headers.Cache-Control = "public, max-age=86400"
