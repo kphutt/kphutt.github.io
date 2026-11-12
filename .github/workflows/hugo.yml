@@ -253,20 +253,35 @@ jobs:
           digest=$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')
           python3 -c 'import re,sys; sys.exit(0 if re.fullmatch(r"sha256:[0-9a-f]{64}", sys.argv[1]) else "no digest for the pushed image: " + repr(sys.argv[1]))' "$digest"
           echo "IMAGE_DIGEST=${IMAGE%:*}@${digest}" >> "$GITHUB_ENV"
+      # No --tag and no --revision-suffix on the update: either one makes gcloud write the
+      # revision's name into the service template. infra/cloud-run.tf would then send that
+      # same name with its next template change, and Cloud Run refuses a second revision
+      # under an existing name (409). Without them Cloud Run names the revision and the
+      # template keeps no name. The tag goes on in a second call, by revision name.
       - name: Deploy the candidate revision at 0% traffic
         run: |
           gcloud run services update "$SERVICE" \
             --image="$IMAGE_DIGEST" \
             --region="$GCP_REGION" --project="$GCP_PROJECT" \
-            --no-traffic --tag="$CAND_TAG" --quiet
+            --no-traffic --quiet
+          rev=$(gcloud run services describe "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format='value(status.latestCreatedRevisionName)')
+          # The newest revision must run the image just pushed, so a revision made by
+          # anything else in between is never tagged, smoke-tested or promoted.
+          image=$(gcloud run revisions describe "$rev" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format='value(spec.containers[0].image)')
+          python3 -c 'import sys; sys.exit(0 if sys.argv[1] == sys.argv[2] else f"newest revision {sys.argv[3]!r} runs {sys.argv[1]!r}, not {sys.argv[2]!r}")' "$image" "$IMAGE_DIGEST" "$rev"
+          gcloud run services update-traffic "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --update-tags="${CAND_TAG}=${rev}" --quiet
           gcloud run services describe "$SERVICE" \
             --region="$GCP_REGION" --project="$GCP_PROJECT" --format=json > "${{ runner.temp }}/service.json"
-          python3 - "${{ runner.temp }}/service.json" <<'PY'
+          CAND_REV="$rev" python3 - "${{ runner.temp }}/service.json" <<'PY'
           import json, os, sys
           tag = os.environ["CAND_TAG"]
           entries = [t for t in json.load(open(sys.argv[1]))["status"].get("traffic", []) if t.get("tag") == tag]
-          if len(entries) != 1 or not entries[0].get("url") or not entries[0].get("revisionName"):
-              sys.exit(f"could not find the candidate revision for tag {tag}")
+          if len(entries) != 1 or not entries[0].get("url") or entries[0].get("revisionName") != os.environ["CAND_REV"]:
+              sys.exit(f"could not find the candidate revision {os.environ['CAND_REV']} under tag {tag}")
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write(f"CAND_URL={entries[0]['url']}\nCAND_REV={entries[0]['revisionName']}\n")
           print(f"Candidate {entries[0]['revisionName']} at {entries[0]['url']}, 0% traffic")
