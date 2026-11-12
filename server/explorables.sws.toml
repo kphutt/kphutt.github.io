@@ -49,6 +49,38 @@ follow-symlinks = false
 redirect-trailing-slash = true
 index-files = "index.html"
 
+# Everything below is a server feature explorables do not use, turned off. Most are off by
+# default already. They are written out because a value in this file overrides both the
+# binary's defaults and any SERVER_* environment variable, so nothing outside the file can
+# turn one on. Each is code that reads the request, so off means less code that can have a
+# bug. scripts/check_explorables.py fails the build if one is turned on, left out, or misspelled:
+# v3 only warns about a key it does not know.
+health = false
+metrics = false
+maintenance-mode = false
+# Content negotiation that serves a .md file for Accept: text/markdown.
+accept-markdown = false
+# No origin gets CORS headers.
+cors-allow-origins = ""
+basic-auth = ""
+# Off, so a missing page is a 404, not a 200 with a fallback page.
+page-fallback = ""
+directory-listing-download = []
+# TLS ends at Google's front end, which also redirects http:// to https://.
+tls = false
+http2 = false
+https-redirect = false
+use-relative-root = false
+# Off, on by default. ETags change how If-None-Match, If-Match and If-Range are answered.
+# A browser still revalidates with If-Modified-Since against Last-Modified.
+etag = false
+# Cloud Run's own request log already records the client. These would log request headers.
+log-remote-address = false
+log-x-real-ip = false
+log-forwarded-for = false
+# On, as by default. It adds charset=utf-8 to a text response that has none (robots.txt), and reads only the response, not the request.
+text-charset = true
+
 [advanced]
 
 # Headers are applied in order, and a later match replaces an earlier value, so the

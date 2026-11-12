@@ -94,7 +94,13 @@ def main() -> int:
         return headers, body
 
     # A cold instance or a tagged URL still being set up gets about thirty seconds.
-    check("/", content_type="text/html", attempts=10)
+    home_headers, _ = check("/", content_type="text/html", attempts=10)
+    # Proof that the feature switches in the config took effect, not just that the file says
+    # so: a renamed key is only warned about, and the server falls back to its default.
+    if "ETag" in home_headers:
+        failures.append("/: has an ETag header, so etag = false did not take effect")
+    check("/health", status=404, content_type="text/html")
+    check("/metrics", status=404, content_type="text/html")
     check("/index.css", content_type="text/css")
     check("/README.md", status=404, content_type="text/html")
 
