@@ -77,12 +77,11 @@ show who was sending traffic).
 
 **Then**, if this month's spend is still above the cutoff, the next budget message will
 turn the site straight back off. So, if you are reopening in the same month, first raise
-`cost_cutoff_usd` in `terraform.tfvars` and apply:
+`cost_cutoff_usd` in `infra/site.tfvars` and apply:
 
 ```bash
-cd infra
-mise exec -- tofu plan -out=site.tfplan   # shows the budget and the function changing
-mise exec -- tofu apply site.tfplan
+python scripts/apply_infra.py --plan-only   # shows the budget and the function changing
+python scripts/apply_infra.py
 ```
 
 **Finally**, reopen the site and explorables (`tofu output cost_cutoff_reopen_command`

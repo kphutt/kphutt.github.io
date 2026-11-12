@@ -1,0 +1,47 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.13.9",
+ "resource_changes": [
+  {
+   "address": "google_cloud_run_v2_service.site",
+   "mode": "managed",
+   "type": "google_cloud_run_v2_service",
+   "name": "site",
+   "change": {
+    "actions": [
+     "create",
+     "delete"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "google_site_verification_web_resource.test[0]",
+   "mode": "managed",
+   "type": "google_site_verification_web_resource",
+   "name": "test",
+   "change": {
+    "actions": [
+     "forget"
+    ],
+    "before": null,
+    "after": null
+   }
+  },
+  {
+   "address": "cloudflare_dns_record.web[1]",
+   "mode": "managed",
+   "type": "cloudflare_dns_record",
+   "name": "web",
+   "change": {
+    "actions": [
+     "delete",
+     "forget"
+    ],
+    "before": null,
+    "after": null
+   }
+  }
+ ]
+}

@@ -6,8 +6,10 @@
     python infra/seed.py vars      # after `tofu apply`: set the deploy workflow's repo variables
 
 Each prints the exact commands it would run and runs nothing. Add --apply to run them.
-Reads project_id, region and billing_account from infra/terraform.tfvars, so there is one
-place those values are written down. Every command is safe to re-run: a step whose
+Reads project_id, region and github_repository from infra/site.tfvars, the committed file
+every plan uses, so there is one place those values are written down. billing_account is
+personal, so it is not committed: `project` reads it from TF_VAR_billing_account, the
+variable OpenTofu reads too (infra-apply.toml has its 1Password reference). Every command is safe to re-run: a step whose
 result already exists is reported and skipped.
 
 Why these are not in OpenTofu: the project and its billing link are what OpenTofu runs
@@ -19,6 +21,7 @@ GitHub, not GCP.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -26,7 +29,7 @@ import sys
 from pathlib import Path
 
 INFRA = Path(__file__).resolve().parent
-TFVARS = INFRA / "terraform.tfvars"
+TFVARS = INFRA / "site.tfvars"
 
 APIS = [
     "serviceusage.googleapis.com",
@@ -56,9 +59,14 @@ DEPLOY_BRANCH = "main"
 
 def tfvars() -> dict:
     if not TFVARS.is_file():
-        sys.exit(f"{TFVARS} not found: copy terraform.tfvars.example to it and fill it in first.")
+        sys.exit(f"{TFVARS} not found: it is committed, so this checkout is incomplete.")
     text = TFVARS.read_text(encoding="utf-8")
-    return dict(re.findall(r'^\s*([a-z_]+)\s*=\s*"([^"]*)"', text, re.M))
+    values = dict(re.findall(r'^\s*([a-z_]+)\s*=\s*"([^"]*)"', text, re.M))
+    # What is not committed (billing_account) comes from TF_VAR_<name>, as OpenTofu reads it.
+    for name, value in os.environ.items():
+        if name.startswith("TF_VAR_") and value:
+            values.setdefault(name.removeprefix("TF_VAR_"), value)
+    return values
 
 
 def tool(name: str) -> str:
@@ -98,6 +106,9 @@ def require_bucket_in_project(gcloud: str, bucket: str, pid: str) -> None:
 def project(apply: bool) -> None:
     v = tfvars()
     gcloud = tool("gcloud")
+    if not v.get("billing_account"):
+        sys.exit("billing_account is not committed: set TF_VAR_billing_account first "
+                 "(its 1Password reference is in infra-apply.toml).")
     pid, region, billing = v["project_id"], v["region"], v["billing_account"]
     bucket = f"gs://{pid}-tofu-state"
 
@@ -123,12 +134,11 @@ def project(apply: bool) -> None:
     # Versioning keeps every earlier state, so a bad apply can be walked back.
     run([gcloud, "storage", "buckets", "update", bucket, "--versioning"], apply)
 
-    print("\nNext, from infra/ (review the plan before applying):")
-    print(f'  tofu init -backend-config="bucket={pid}-tofu-state" -backend-config="prefix=site"')
-    print("  tofu plan -out=site.tfplan")
-    print("  tofu apply site.tfplan")
-    print("  python seed.py env --apply")
-    print("  python seed.py vars --apply")
+    print("\nNext, from the repository root (the first command applies nothing):")
+    print("  python scripts/apply_infra.py --plan-only")
+    print("  python scripts/apply_infra.py")
+    print("  python infra/seed.py env --apply")
+    print("  python scripts/apply_infra.py --run seed-vars")
 
 
 def variables(apply: bool) -> None:

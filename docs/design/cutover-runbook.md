@@ -19,7 +19,7 @@ Every `gcloud` command names its project and region explicitly. Set them once in
 first, so a different default project can never receive a mapping:
 
 ```bash
-PROJECT=<project_id>   # from infra/terraform.tfvars
+PROJECT=<project_id>   # from infra/site.tfvars
 REGION=<region>
 ```
 
@@ -65,13 +65,14 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 1. Do the one-time setup in `infra/README.md`, "The test name": the Cloudflare token, the
    zone id, and signing in with the Site Verification scope.
 2. Map the test name, option A in [the ADR](../decisions/0001-custom-domain-on-cloud-run.md):
-   set `test_domain_enabled = true` in `infra/terraform.tfvars`, then from `infra/`, with
-   `CLOUDFLARE_API_TOKEN` set:
+   set `test_domain_enabled = true` in `infra/site.tfvars` in a pull request, then once it
+   is merged, from the repository root:
    ```bash
-   mise exec -- tofu plan -out=site.tfplan
-   mise exec -- tofu apply site.tfplan
+   python scripts/apply_infra.py --plan-only
+   python scripts/apply_infra.py
    ```
-   Read the plan first: it must add only records named `next.kphutt.com` and
+   The script reads `CLOUDFLARE_API_TOKEN` from 1Password and passes `infra/site.tfvars`
+   to every plan (`infra/README.md`, "Applying"). Read the plan first: it must add only records named `next.kphutt.com` and
    `<token>.next.kphutt.com`, the ownership record and the mapping, and change nothing
    else. The apply proves ownership of the test name, creates the mapping and adds the four
    A and four AAAA records it asks for, DNS only (`infra/README.md` explains why a verified
@@ -100,15 +101,23 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 
 ## Step 5 under option A: the apex, by domain mapping
 
-Only after step 4 is recorded and the decision is made. Three pull requests (A, B, C), applied by
-hand in order, each from `infra/` with `CLOUDFLARE_API_TOKEN` set and the Site Verification
-scope signed in (`infra/README.md`, "The test name", step 3). Each plan is saved and read
-before it is applied:
+Only after step 4 is recorded and the decision is made. Three pull requests (A, B, C), applied
+in order once each is merged, from the repository root with the Site Verification scope signed
+in (`infra/README.md`, "The test name", step 3). Read each plan with `--plan-only` first:
 
 ```bash
-mise exec -- tofu plan -out=site.tfplan
-mise exec -- tofu apply site.tfplan
+python scripts/apply_infra.py --plan-only
+python scripts/apply_infra.py
 ```
+
+The second command plans again and applies that new plan without asking. Deletes, replaces
+and forgets are still refused unless named, but a create or update that was not in the plan
+you read is applied, so run it right after reading, with nothing merged in between.
+
+A plan that deletes or replaces anything, such as an undo below, is refused unless the
+command names it with `--allow-delete` or `--allow-replace` (`--allow-delete
+cloudflare_dns_record.web` allows every instance of that resource), as in `infra/README.md`,
+"Applying".
 
 ### The certificate gap: read this before choosing a time
 
@@ -168,7 +177,7 @@ the next apply creates), which pull request B needs for the apex's new AAAA reco
 3. Check the test name is unchanged: plan again and expect `No changes`. Its mapping was made
    when only `next.kphutt.com` was verified. If Google now asks it for a CNAME instead (it
    is a subdomain of a verified name now), the mapping's own check stops the plan; then set
-   `verify_test_hostname = false` in `terraform.tfvars`, or switch the test name off.
+   `verify_test_hostname = false` in `infra/site.tfvars`, or switch the test name off.
 
 **Undo:** the mappings and the ownership record carry `prevent_destroy`, so removing them is
 a pull request that lifts it and deletes them. Until B is applied, nothing points at them.
