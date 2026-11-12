@@ -317,8 +317,8 @@ jobs:
               --remove-tags="$CAND_TAG" --quiet || true
           fi
 
-  # explorables/ copied without its READMEs, then checked: the same commands as
-  # scripts/local_verify.py runs at pre-push.
+  # explorables/ copied without its READMEs, robots.txt and sitemap.xml generated, then
+  # checked: the same commands as scripts/local_verify.py runs at pre-push.
   explorables:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

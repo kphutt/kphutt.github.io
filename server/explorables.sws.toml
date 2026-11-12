@@ -8,9 +8,9 @@
 #
 # THE SECURITY HEADERS BELOW ARE A POLICY, NOT TUNING. scripts/check_explorables.py reads
 # this file and fails the build if the Content-Security-Policy is weaker than its floor on
-# any directive, if it gains a connect-src, if HSTS gains includeSubDomains or preload, or
-# if a required header goes missing, X-Robots-Tag included. scripts/smoke_explorables.py
-# checks a running server sends exactly these values.
+# any directive, if it gains a connect-src, if HSTS gains includeSubDomains or preload, if
+# a required header goes missing, or if anything here would keep a page out of search
+# results. scripts/smoke_explorables.py checks a running server sends exactly these values.
 
 [general]
 host = "0.0.0.0"
@@ -64,12 +64,16 @@ Referrer-Policy = "no-referrer"
 Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
 Cross-Origin-Opener-Policy = "same-origin"
 Cross-Origin-Resource-Policy = "same-origin"
-# Kept out of search results: these pages go with posts on kphutt.com, which is what a
-# search should find. A header, so it covers every file, not only pages with the meta tag.
-# robots.txt stays absent on purpose: a crawler that may not fetch a page never sees this.
-X-Robots-Tag = "noindex, nofollow"
+# No X-Robots-Tag: explorables are meant to be found in search. The build generates
+# robots.txt and sitemap.xml, and only the 404 page carries a noindex meta tag.
 # File names here do not change when their content does, so everything stays short.
 Cache-Control = "public, max-age=300"
+
+# sitemap.xml. The server's default for .xml is text/xml; application/xml is the type
+# registered for XML documents, as on the site.
+[[advanced.headers]]
+source = "/sitemap.xml"
+headers.Content-Type = "application/xml"
 
 # Bundled fonts change rarely, and a stale one only looks slightly different.
 [[advanced.headers]]

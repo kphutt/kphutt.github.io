@@ -9,9 +9,13 @@ rules as the site, and this file reuses check_build.py's checks to apply them:
   - no inline code: no inline <script>, no <style> element, no style= or on...= attribute,
     no javascript: URL;
   - nothing loaded from another origin, by any page, stylesheet or script module;
-  - every page carries <meta name="robots" content="noindex, nofollow">;
-  - server/explorables.sws.toml sends the full header set, X-Robots-Tag included, with a
-    Content-Security-Policy no weaker than POLICY_FLOOR on any directive and no connect-src;
+  - every page can be found in search: no page but 404.html says noindex, by meta tag or
+    X-Robots-Tag header, and each has a title, a description and its own canonical URL.
+    404.html must say noindex;
+  - robots.txt allows everything and names the sitemap, and sitemap.xml lists exactly the
+    landing page and every explorable, by absolute URL on ORIGIN;
+  - server/explorables.sws.toml sends the full header set, with a Content-Security-Policy
+    no weaker than POLICY_FLOOR on any directive and no connect-src;
   - every explorables/<slug>/ has an index.html and a README.md, and no README is in the
     output, where the server would serve it;
   - no dot-files in the output;
@@ -27,19 +31,18 @@ from __future__ import annotations
 
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_build as cb  # noqa: E402
+from build_explorables import ORIGIN, page_paths  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 SOURCE = REPO / "explorables"
 CONFIG = REPO / "server" / "explorables.sws.toml"
 DOCKERFILES = (REPO / "Dockerfile", REPO / "explorables.Dockerfile")
-
-# The explorables origin. Its host name is the domain mapping in infra/explorables.tf.
-ORIGIN = "https://explorables.kphutt.com"
 
 # The weakest policy explorables may ship, read the same way as check_build.POLICY_FLOOR:
 # each directive maps to the only sources it may hold, and a directive not listed may only
@@ -66,14 +69,20 @@ REQUIRED_HEADERS = {
     "Referrer-Policy": {"no-referrer"},
     "Cross-Origin-Opener-Policy": {"same-origin"},
     "Cross-Origin-Resource-Policy": {"same-origin"},
-    "X-Robots-Tag": {"noindex, nofollow"},
 }
+
+# The one page kept out of search: it answers for every missing path.
+NOT_FOUND = "404.html"
 
 # Files the output must have, and why.
 EXPECTED_FILES = {
     "index.html": "the landing page would 404",
     "404.html": "missing pages would get the server's built-in page, whose inline <style> the CSP blocks",
+    "robots.txt": "crawlers would not be pointed at the sitemap",
+    "sitemap.xml": "search engines would have to find each explorable on their own",
 }
+
+SITEMAP_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 
 SLUG = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
@@ -101,12 +110,25 @@ def check_server(failures: list, config: Path = CONFIG, site_config: Path = cb.S
         failures.append(f"{name}: Permissions-Policy must equal the site's in {site_config.name}")
     if not headers.get("cache-control"):
         failures.append(f"{name}: no Cache-Control header on the catch-all rule")
+    # On every response, so it would hide every page. 404.html says noindex for itself.
+    if hides(headers.get("x-robots-tag") or ""):
+        failures.append(f"{name}: X-Robots-Tag {headers['x-robots-tag']!r} would keep every page out of search")
 
     config_text = config.read_text(encoding="utf-8")
     general = cb.tomllib.loads(config_text).get("general", {})
     for key, want in (("page404", "404.html"), ("directory-listing", False), ("ignore-hidden-files", True)):
         if general.get(key) != want:
             failures.append(f"{name}: {key} must be {want!r}, got {general.get(key)!r}")
+
+
+def hides(directives: str) -> bool:
+    """True if a robots meta content or X-Robots-Tag value keeps a page out of search."""
+    return bool({t.strip().lower() for t in directives.split(",")} & {"noindex", "none"})
+
+
+def page_url(page: str) -> str:
+    """The canonical URL of a built page, from its path in the output."""
+    return f"{ORIGIN}/{page[:-len('index.html')] if page.endswith('index.html') else page}"
 
 
 def check_pages(root: Path, failures: list) -> None:
@@ -117,11 +139,26 @@ def check_pages(root: Path, failures: list) -> None:
         html = path.read_text(encoding="utf-8", errors="replace")
         page = path.relative_to(root).as_posix()
 
-        robots = [attributes(t) for t in re.findall(r"<meta\b[^>]*>", html, re.I)]
-        robots = [a for a in robots if a.get("name", "").lower() == "robots"]
-        tokens = {t.strip().lower() for a in robots for t in a.get("content", "").split(",")}
-        if not {"noindex", "nofollow"} <= tokens:
-            failures.append(f'{page}: no <meta name="robots" content="noindex, nofollow">')
+        metas = [attributes(t) for t in re.findall(r"<meta\b[^>]*>", html, re.I)]
+        # robots, and any one crawler by name (googlebot, bingbot).
+        robots = [a for a in metas if a.get("name", "").lower() == "robots" or a.get("name", "").lower().endswith("bot")]
+        says_noindex = any(hides(a.get("content", "")) for a in robots)
+        if page == NOT_FOUND:
+            if not says_noindex:
+                failures.append(f'{page}: no <meta name="robots" content="noindex"> -- an error page should not be indexed')
+        else:
+            if says_noindex:
+                failures.append(f"{page}: a robots meta tag says noindex, which keeps the page out of search")
+            title = re.search(r"<title\b[^>]*>(.*?)</title\s*>", html, re.S | re.I)
+            if not title or not title.group(1).strip():
+                failures.append(f"{page}: no <title>, or an empty one")
+            descriptions = [a.get("content", "") for a in metas if a.get("name", "").lower() == "description"]
+            if len(descriptions) != 1 or not descriptions[0].strip():
+                failures.append(f'{page}: needs exactly one non-empty <meta name="description">')
+            links = [attributes(t) for t in re.findall(r"<link\b[^>]*>", html, re.I)]
+            canonical = [a.get("href") for a in links if "canonical" in a.get("rel", "").lower().split()]
+            if canonical != [page_url(page)]:
+                failures.append(f"{page}: canonical link is {canonical}, expected [{page_url(page)!r}]")
 
         # A <script> the closing-tag pattern in check_inline_code cannot see would swallow
         # the rest of the page, and whatever it holds would be missed.
@@ -151,6 +188,40 @@ def check_same_origin(page: str, url: str, failures: list) -> None:
     url = url.strip()
     if url.startswith("//") or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", url):
         failures.append(f"{page}: loads script {url} from another origin, or by absolute URL -- use a relative one")
+
+
+def check_discovery(root: Path, failures: list) -> None:
+    """robots.txt names the sitemap and blocks nothing; the sitemap lists exactly the pages."""
+    robots = root / "robots.txt"
+    if robots.is_file():
+        lines = [line.split("#", 1)[0].strip() for line in robots.read_text(encoding="utf-8").splitlines()]
+        if f"Sitemap: {ORIGIN}/sitemap.xml" not in lines:
+            failures.append(f"robots.txt: no 'Sitemap: {ORIGIN}/sitemap.xml' line")
+        blocked = [line for line in lines if line.lower().startswith("disallow:") and line.split(":", 1)[1].strip()]
+        if blocked:
+            failures.append(f"robots.txt: {', '.join(blocked)} keeps pages out of search")
+    sitemap = root / "sitemap.xml"
+    if not sitemap.is_file():
+        return
+    try:
+        locs = [(e.text or "").strip() for e in ET.parse(sitemap).getroot().iter(f"{SITEMAP_NS}loc")]
+    except ET.ParseError as e:
+        failures.append(f"sitemap.xml is not valid XML: {e}")
+        return
+    paths = []
+    for loc in locs:
+        if not loc.startswith(ORIGIN + "/"):
+            failures.append(f"sitemap.xml lists {loc!r}, which is not an absolute URL on {ORIGIN}")
+            continue
+        path = loc[len(ORIGIN):]
+        paths.append(path)
+        if not path.endswith("/") or not (root / path.strip("/") / "index.html").is_file():
+            failures.append(f"sitemap.xml lists {loc}, which is not a page in the build")
+    if len(paths) != len(set(paths)):
+        failures.append("sitemap.xml lists a URL twice")
+    for path in page_paths(root):
+        if path not in paths:
+            failures.append(f"sitemap.xml does not list {ORIGIN}{path}")
 
 
 def check_layout(source: Path, root: Path, failures: list) -> None:
@@ -190,6 +261,7 @@ def check(root: Path, source: Path = SOURCE, config: Path = CONFIG,
     failures = []
     check_layout(source, root, failures)
     check_pages(root, failures)
+    check_discovery(root, failures)
     check_server(failures, config, site_config)
     check_base_image(failures, dockerfiles)
     return failures
@@ -206,7 +278,8 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     slugs = [p.name for p in SOURCE.iterdir() if p.is_dir()]
-    print(f"Explorables check passed: {len(slugs)} explorable(s), every page noindex,")
+    print(f"Explorables check passed: {len(slugs)} explorable(s), all in the sitemap and findable")
+    print("in search (only 404.html noindex), each with a title, description and canonical URL,")
     print("no inline code, nothing loaded from another origin, no README or dot-file served,")
     print("CSP at or above the floor in server/explorables.sws.toml with no connect-src,")
     print("every required header set, base image the same as the site's.")

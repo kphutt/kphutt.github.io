@@ -1,8 +1,9 @@
 # The explorables container: static-web-server plus the checked explorables, nothing else.
 #
 # The same pattern as the site's Dockerfile. CI copies explorables/ into public-explorables/
-# without its READMEs, runs scripts/check_explorables.py on that exact output, then copies
-# it in here. Build it the same way locally:
+# without its READMEs, adds the generated robots.txt and sitemap.xml, runs
+# scripts/check_explorables.py on that exact output, then copies it in here. Build it the
+# same way locally:
 #
 #     python scripts/build_explorables.py && python scripts/check_explorables.py public-explorables
 #     docker build -f explorables.Dockerfile -t explorables . && docker run --rm -p 8080:8080 explorables
