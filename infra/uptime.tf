@@ -87,7 +87,7 @@ resource "google_monitoring_uptime_check_config" "site" {
   selected_regions = local.uptime_regions
 }
 
-# Its own resource, not an entry in uptime_hostnames, so a terraform.tfvars that sets that
+# Its own resource, not an entry in uptime_hostnames, so a .tfvars file that sets that
 # list cannot drop it.
 resource "google_monitoring_uptime_check_config" "explorables" {
   display_name = "Site explorables.kphutt.com"

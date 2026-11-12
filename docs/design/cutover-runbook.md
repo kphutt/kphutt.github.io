@@ -19,7 +19,7 @@ Every `gcloud` command names its project and region explicitly. Set them once in
 first, so a different default project can never receive a mapping:
 
 ```bash
-PROJECT=<project_id>   # from infra/terraform.tfvars
+PROJECT=<project_id>   # from infra/site.tfvars
 REGION=<region>
 ```
 
@@ -65,7 +65,7 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 1. Do the one-time setup in `infra/README.md`, "The test name": the Cloudflare token, the
    zone id, and signing in with the Site Verification scope.
 2. Map the test name, option A in [the ADR](../decisions/0001-custom-domain-on-cloud-run.md):
-   set `test_domain_enabled = true` in `infra/terraform.tfvars`, then from `infra/`, with
+   set `test_domain_enabled = true` in `infra/site.tfvars`, then from `infra/`, with
    `CLOUDFLARE_API_TOKEN` set:
    ```bash
    mise exec -- tofu plan -out=site.tfplan
@@ -168,7 +168,7 @@ the next apply creates), which pull request B needs for the apex's new AAAA reco
 3. Check the test name is unchanged: plan again and expect `No changes`. Its mapping was made
    when only `next.kphutt.com` was verified. If Google now asks it for a CNAME instead (it
    is a subdomain of a verified name now), the mapping's own check stops the plan; then set
-   `verify_test_hostname = false` in `terraform.tfvars`, or switch the test name off.
+   `verify_test_hostname = false` in `infra/site.tfvars`, or switch the test name off.
 
 **Undo:** the mappings and the ownership record carry `prevent_destroy`, so removing them is
 a pull request that lifts it and deletes them. Until B is applied, nothing points at them.
