@@ -147,8 +147,10 @@ CSP copy would be a second policy to keep in step. Add or change a header in `se
   Disallow group per training crawler).
 - `layouts/partials/templates/schema_json.html` writes the JSON-LD. The author is one Person,
   `https://kphutt.com/#person`, described on the home page from `params.description` and
-  `[params.schema]` in `hugo.toml`, and referenced by that @id everywhere else, explorables
-  included. `params.schema.sameAs` is the one list of profiles; `llms.txt` prints the same list.
+  `[params.schema]` in `hugo.toml`, and referenced by that @id everywhere else on this site.
+  The owner's other sites, such as explorables.kphutt.com, can reference the same @id from
+  their own repositories; this repo's `explorables/` copy carries no JSON-LD.
+  `params.schema.sameAs` is the one list of profiles; `llms.txt` prints the same list.
 - JSON-LD is the only `<script>` the build may contain, and only as plain data:
   `scripts/check_build.py` fails a block that is not a JSON object or array.
 - Each page's lastmod comes from git (`enableGitInfo`), so the build needs full history.

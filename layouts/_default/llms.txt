@@ -38,7 +38,7 @@
 {{ with site.Params.description }}
 > {{ . }}
 {{ end }}
-This is the personal site of {{ site.Params.author }}, also known as {{ site.Params.schema.alternateName }}. The home page is his background and what he has been learning and building: {{ site.Home.Permalink }}
+This is the personal site of {{ site.Params.author }}{{ with site.Params.schema.alternateName }}, also known as {{ . }}{{ end }}. The home page is his background and what he has been learning and building: {{ site.Home.Permalink }}
 
 ## Profiles
 {{ range site.Params.schema.sameAs }}

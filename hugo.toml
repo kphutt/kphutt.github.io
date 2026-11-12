@@ -87,8 +87,9 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 #
 # layouts/partials/templates/schema_json.html renders these, replacing the theme's version
 # of that file. It gives the person one @id, https://kphutt.com/#person, and every page
-# that mentions the author points at that @id, so the home page, each post and the
-# explorables site (which uses the same @id) all describe one entity. The description is
+# that mentions the author points at that @id, so the home page and each post describe one
+# entity. The owner's other sites, such as explorables.kphutt.com, can reference the same
+# @id from their own repositories. The description is
 # params.description above. knowsAbout repeats the topics the home page names.
 [params.schema]
   publisherType = "Person"

@@ -99,6 +99,14 @@ def main() -> int:
     hugo = hugo_command()
     check_version(hugo, pinned_hugo_version())
 
+    # lastmod comes from git (enableGitInfo in hugo.toml), so a shallow clone would date
+    # every page by its one commit. CI refuses one; so does this.
+    shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"],
+                             capture_output=True, text=True, cwd=REPO).stdout.strip()
+    if shallow != "false":
+        fail("this is a shallow clone (or not a git checkout): lastmod comes from git history, "
+             "so the build needs full history. Run: git fetch --unshallow")
+
     # CI builds into a fresh checkout. Reproduce that precondition.
     if BUILD_DIR.exists():
         shutil.rmtree(BUILD_DIR)
