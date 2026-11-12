@@ -2,11 +2,17 @@
 """Run the CI build gate locally, on the same terms CI runs it.
 
 Dispatched by pre-commit at the pre-push stage (.pre-commit-config.yaml). The point is
-that this file adds no checks of its own -- it runs the two commands from the `build` job
-in .github/workflows/hugo.yml verbatim:
+that this file adds no checks of its own -- it runs the two build commands from the `site`
+job in .github/workflows/hugo.yml verbatim:
 
     hugo --gc --minify
     python3 scripts/check_build.py public
+
+and then the three from the `explorables` job:
+
+    python3 scripts/build_explorables.py
+    python3 scripts/check_explorables.py public-explorables
+    python3 -m unittest discover -s scripts -p "test_*.py"
 
 What it does add is CI's *preconditions*, which a working tree does not have for free.
 Both of these were real failures, not theory:
@@ -101,7 +107,12 @@ def main() -> int:
     run([*hugo, "--gc", "--minify"], "hugo build failed")
     run([sys.executable, "scripts/check_build.py", "public"], "build check failed")
 
-    print("\nlocal gate passed -- matches the CI build job")
+    # The explorables job. build_explorables.py empties its own output first.
+    run([sys.executable, "scripts/build_explorables.py"], "explorables build failed")
+    run([sys.executable, "scripts/check_explorables.py", "public-explorables"], "explorables check failed")
+    run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"], "gate unit tests failed")
+
+    print("\nlocal gate passed -- matches the CI site and explorables jobs")
     return 0
 
 
