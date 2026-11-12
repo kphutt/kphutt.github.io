@@ -74,6 +74,22 @@ override_resource {
   }
 }
 
+# explorables.kphutt.com's mapping (explorables.tf) asks for one CNAME, as www does.
+# tests/explorables.tftest.hcl tests it; here it only has to plan.
+override_resource {
+  target = google_cloud_run_domain_mapping.explorables
+  values = {
+    status = [{
+      conditions          = []
+      observed_generation = 1
+      mapped_route_name   = "explorables"
+      resource_records = [
+        { name = "explorables", type = "CNAME", rrdata = "ghs.googlehosted.com." },
+      ]
+    }]
+  }
+}
+
 variables {
   apex_verification_expected = "abc123def gv-mockedapex.dv.googlehosted.com"
   project_id                 = "test-site-project"

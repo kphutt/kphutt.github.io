@@ -1,7 +1,10 @@
 name: Roll back Cloud Run
 
-# Send 100% of Cloud Run traffic to an earlier revision, by name. Run it by hand from the
-# Actions tab when a deploy passed its smoke test but is wrong anyway. Like a deploy, it
+# Send 100% of a Cloud Run service's traffic to an earlier revision, by name. Run it by hand
+# from the Actions tab when a deploy passed its smoke test but is wrong anyway. Pick the
+# service: `site` (kphutt.com) or `explorables` (explorables.kphutt.com). Each has its own
+# image, its own smoke test and its own traffic queue, so rolling back one never touches the
+# other. Like a deploy, it
 # is gated: the target revision is smoke-tested at its own tagged URL before it gets any
 # traffic, and refused if its image is gone from the registry. After the move, the `live`
 # tag follows it, so the registry's cleanup keeps the image now serving.
@@ -14,15 +17,23 @@ name: Roll back Cloud Run
 #
 # Revision names: gcloud run revisions list --service <service> --region <region> --project <project>
 #
-# It shares a queue with the deploy job, and GitHub keeps only one waiting run per queue:
-# if a rollback is waiting behind a deploy and another merge lands, the rollback is
-# dropped. Check that it ran, and run it again once the deploys finish.
+# It shares a queue with that service's deploy job (cloud-run-traffic for the site,
+# explorables-traffic for explorables), and GitHub keeps only one waiting run per queue: if a
+# rollback is waiting behind a deploy and another merge lands, the rollback is dropped. Check
+# that it ran, and run it again once the deploys finish.
 
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: "Service to roll back: site (kphutt.com) or explorables (explorables.kphutt.com)"
+        required: true
+        type: choice
+        options:
+          - site
+          - explorables
       revision:
-        description: "Revision to send 100% of traffic to, e.g. site-00042-abc"
+        description: "Revision of that service to send 100% of its traffic to, e.g. site-00042-abc"
         required: true
         type: string
       skip_smoke:
@@ -35,9 +46,10 @@ permissions:
   contents: read
   id-token: write # the GitHub OIDC token WIF exchanges; nothing else
 
-# Shared with the deploy job: one change to the traffic split at a time.
+# Shared with the chosen service's deploy job: one change to its traffic split at a time.
+# Both branches are non-empty literals, so the expression cannot fall through to the wrong one.
 concurrency:
-  group: cloud-run-traffic
+  group: ${{ inputs.service == 'explorables' && 'explorables-traffic' || 'cloud-run-traffic' }}
   cancel-in-progress: false
 
 jobs:
@@ -50,12 +62,37 @@ jobs:
     env:
       GCP_PROJECT: ${{ vars.GCP_PROJECT }}
       GCP_REGION: ${{ vars.GCP_REGION }}
-      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
-      IMAGE_BASE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/${{ vars.ARTIFACT_REPO }}/site
+      # The service, its image and its smoke test are chosen in the first step, from these.
+      # Not with `a && b || c` here: an unset EXPLORABLES_SERVICE is falsy, and that form
+      # would quietly fall through to the site.
+      CHOICE: ${{ inputs.service }}
+      SITE_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      EXPLORABLES_SERVICE: ${{ vars.EXPLORABLES_SERVICE }}
+      REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/${{ vars.ARTIFACT_REPO }}
       TARGET_REV: ${{ inputs.revision }}
       SKIP_SMOKE: ${{ inputs.skip_smoke }}
       RB_TAG: rb-${{ github.run_id }}
     steps:
+      # Each choice maps to its service, the image package it deploys and its smoke test.
+      # Anything else, or a service whose variable is unset, stops here before any change.
+      - name: Pick the service
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          choice = os.environ["CHOICE"]
+          services = {
+              "site": (os.environ["SITE_SERVICE"], "site", "scripts/smoke.py", "CLOUD_RUN_SERVICE"),
+              "explorables": (os.environ["EXPLORABLES_SERVICE"], "explorables", "scripts/smoke_explorables.py", "EXPLORABLES_SERVICE"),
+          }
+          if choice not in services:
+              sys.exit(f"unknown service {choice!r}: choose site or explorables")
+          service, package, smoke, variable = services[choice]
+          if not service:
+              sys.exit(f"the {variable} repository variable is not set, so there is no {choice} service to roll back (infra/README.md)")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"SERVICE={service}\nIMAGE_BASE={os.environ['REGISTRY']}/{package}\nSMOKE={smoke}\n")
+          print(f"Rolling back {choice}: service {service}")
+          PY
       # The input is passed through the environment, never pasted into the script, and is
       # checked against the shape of a revision name before anything uses it.
       - name: Check the revision name
@@ -72,15 +109,23 @@ jobs:
           service_account: ${{ vars.DEPLOYER_SA }}
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
-      # Refuse a revision whose image is not one of ours (the placeholder the service was
-      # created with), or whose image the registry has since deleted: Cloud Run could not
-      # start it on the next cold start.
-      - name: Check the revision's image still exists
+      # Refuse a revision of another service, a revision whose image is not one of this
+      # service's (the placeholder the service was created with), or one whose image the
+      # registry has since deleted: Cloud Run could not start it on the next cold start.
+      - name: Check the revision belongs to the service and its image still exists
         run: |
-          image=$(gcloud run revisions describe "$TARGET_REV" \
-            --region="$GCP_REGION" --project="$GCP_PROJECT" \
-            --format='value(spec.containers[0].image)')
-          echo "Revision ${TARGET_REV} runs ${image}"
+          gcloud run revisions describe "$TARGET_REV" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format=json > "${{ runner.temp }}/revision.json"
+          image=$(python3 - "${{ runner.temp }}/revision.json" <<'PY'
+          import json, os, sys
+          rev = json.load(open(sys.argv[1]))
+          owner = rev["metadata"].get("labels", {}).get("serving.knative.dev/service")
+          if owner != os.environ["SERVICE"]:
+              sys.exit(f"revision {os.environ['TARGET_REV']} belongs to service {owner!r}, not {os.environ['SERVICE']!r}")
+          print(rev["spec"]["containers"][0]["image"])
+          PY
+          )
+          echo "Revision ${TARGET_REV} of ${SERVICE} runs ${image}"
           python3 -c 'import os,sys; i=sys.argv[1]; b=os.environ["IMAGE_BASE"]; sys.exit(0 if i.startswith(b + "@sha256:") else f"{i!r} is not an image of {b} pinned by digest")' "$image"
           gcloud artifacts docker images describe "$image" --format='value(image_summary.digest)' > /dev/null
           echo "TARGET_DIGEST=${image#*@}" >> "$GITHUB_ENV"
@@ -104,9 +149,9 @@ jobs:
         run: |
           if [ "$SKIP_SMOKE" = "true" ]; then
             echo "::warning::smoke gate skipped by request (break-glass)"
-            python3 scripts/smoke.py "$RB_URL" || echo "::warning::the revision fails today's smoke test"
+            python3 "$SMOKE" "$RB_URL" || echo "::warning::the revision fails today's smoke test"
           else
-            python3 scripts/smoke.py "$RB_URL"
+            python3 "$SMOKE" "$RB_URL"
           fi
       - name: Send 100% of traffic to it
         run: |
@@ -124,7 +169,7 @@ jobs:
       - name: Summarise
         run: |
           {
-            echo "### Cloud Run traffic: 100% to \`${TARGET_REV}\`"
+            echo "### Cloud Run traffic for ${SERVICE}: 100% to \`${TARGET_REV}\`"
             echo
             echo "To ship forward, fix main; the next merge deploys as usual."
           } >> "$GITHUB_STEP_SUMMARY"

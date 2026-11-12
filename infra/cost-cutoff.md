@@ -2,7 +2,9 @@
 
 The site's `*.run.app` address is public, so anyone can send it traffic, and traffic costs
 money. The $1 budget in `monitoring.tf` only sends email. The cost cutoff acts: when the
-month's **actual** spend reaches `cost_cutoff_usd` (default $10), it turns the site off.
+month's **actual** spend reaches `cost_cutoff_usd` (default $10), it turns the site off, and
+the explorables service with it (`explorables.tf`). The budget watches the whole project, so
+every public service in it is on the function's list (`SERVICES`).
 
 The resources are in `cost-cutoff.tf`. The function is `cost-cutoff/main.py`.
 
@@ -11,8 +13,8 @@ The resources are in `cost-cutoff.tf`. The function is `cost-cutoff/main.py`.
 1. A second budget, "Site cost cutoff", watches the project. Its amount is the cutoff.
 2. Cloud Billing sends that budget's current numbers to a Pub/Sub topic several times a day.
 3. Each message starts the function. It reads `costAmount`, the month's actual cost so far.
-   If that is at or above the cutoff, it sets the site's Cloud Run **ingress** to
-   **internal only**.
+   If that is at or above the cutoff, it sets the Cloud Run **ingress** of the site and of
+   explorables to **internal only**.
 4. The same budget emails the existing alert address when actual spend crosses the
    cutoff, so you hear about it at the moment it trips. The function also writes an
    `ALERT` log line that starts with `COST CUTOFF TRIPPED`.
@@ -53,8 +55,8 @@ Other options, and why not:
 It runs as its own service account, `site-cost-cutoff`, which holds:
 
 - a custom role with three permissions, `run.services.get`, `run.services.update` and
-  `run.operations.get`, bound **on the site service only**. It cannot delete the service,
-  change its IAM or touch any other service. No project-wide role.
+  `run.operations.get`, bound **on the site and explorables services only**. It cannot
+  delete either, change their IAM or touch any other service. No project-wide role.
 - `iam.serviceAccountUser` on the site's runtime account. Cloud Run asks for this whenever
   a service is updated. The runtime account holds no permissions, so acting as it reaches
   nothing.
@@ -83,11 +85,12 @@ mise exec -- tofu plan -out=site.tfplan   # shows the budget and the function ch
 mise exec -- tofu apply site.tfplan
 ```
 
-**Finally**, reopen the site. This is the one command (`tofu output
-cost_cutoff_reopen_command` prints it with your values filled in):
+**Finally**, reopen the site and explorables (`tofu output cost_cutoff_reopen_command`
+prints this with your values filled in):
 
 ```bash
 gcloud run services update site --region=us-west1 --project=<project_id> --ingress=all
+gcloud run services update explorables --region=us-west1 --project=<project_id> --ingress=all
 ```
 
 A new month starts the count again from zero, but the site stays off until you run that
@@ -95,7 +98,7 @@ command. It never reopens itself.
 
 ## What does not reopen it
 
-- **`tofu apply`.** `cloud-run.tf` ignores the service's ingress, so applying any change
+- **`tofu apply`.** `cloud-run.tf` and `explorables.tf` ignore each service's ingress, so applying any change
   leaves a tripped site off. The cost of that: OpenTofu no longer notices if ingress is
   changed by hand. The plan tests still check the value it is created with, and a unit test
   (`cost-cutoff/test_main.py`) fails if the ignore is removed.

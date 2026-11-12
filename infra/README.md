@@ -14,19 +14,21 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `dns.tf` | The zone's production DNS records at Cloudflare: the apex, `www`, mail. The only file that may manage them |
 | `test-domain.tf` | The test name: domain mapping, its DNS record at Cloudflare, ownership proof. Off by default |
 | `site-domain.tf` | The live names: ownership proof for `kphutt.com`, and the mappings for `kphutt.com` and `www` |
+| `explorables.tf` | The explorables service and its mapping for `explorables.kphutt.com` |
 | `outputs.tf` | The values the deploy workflow needs as repository variables |
 | `seed.py` | The one-time steps OpenTofu cannot do: the project, the GitHub environment, the repository variables |
 | `tests/plan.tftest.hcl` | Offline plan tests with mocked providers |
 | `tests/dns.tftest.hcl` | Offline tests that pin every production record's value |
 | `tests/test-domain.tftest.hcl` | Offline tests that the test name can never be `kphutt.com` or `www` |
 | `tests/site-domain.tftest.hcl` | Offline tests of the live names' ownership record and mappings |
+| `tests/explorables.tftest.hcl` | Offline tests of the explorables service, mapping, deploy rights, cutoff and alerts |
 
 ## Who changes what
 
 - **OpenTofu owns the infrastructure.** Every change lands through a reviewed pull
   request, and is applied by hand from a dev machine. CI cannot: the deployer
-  identity it gets can push an image and deploy a revision of this one service, and
-  nothing else.
+  identity it gets can push an image and deploy a revision of the site's service or the
+  explorables service, and nothing else.
 - **Deploying is trusted to `main`.** The Google identity accepts only the
   `cloud-run` environment's jobs in `hugo.yml` and `rollback.yml`, on `main`, from a push
   or a manual run. That is only as strong as the rule that nothing reaches `main` except
@@ -70,7 +72,7 @@ in and creating the Cloudflare token.
    so that only `main` can deploy to it. It needs `gh` signed in as a repository admin.
    (The first deploy would create the environment anyway, without that limit; the Google
    side refuses anything but `main` either way.)
-6. `mise exec -- python infra/seed.py vars --apply` sets the six repository variables the
+6. `mise exec -- python infra/seed.py vars --apply` sets the seven repository variables the
    deploy workflow reads. The Cloud Run deploy job skips itself until `WIF_PROVIDER` is set,
    and the workflow still builds and checks the site.
 
@@ -193,7 +195,9 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
   DMARC TXT records.
 - `cloudflare_dns_record.services` (list `local.service_records`): `lodestar.kphutt.com`, a
   CNAME to `ghs.googlehosted.com` for the lodestar service, which runs in its own Google
-  Cloud project. Its domain mapping and certificate are managed there. In this list, the
+  Cloud project. Its domain mapping and certificate are managed there. And
+  `explorables.kphutt.com`, the same kind of CNAME, for this project's explorables service
+  (`explorables.tf` holds its mapping). In this list, the
   guards below allow only CNAMEs to Google's mapping host, one label under the zone.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
@@ -259,6 +263,37 @@ The guards:
   plan deleting it).
 - `tests/dns.tftest.hcl` pins every name, type, value and MX priority.
 
+## Explorables (`explorables.tf`)
+
+A second Cloud Run service, `explorables`, for the pages in `explorables/`, on its own origin
+so the site keeps `script-src 'none'` (`AGENTS.md`, "Explorables"). It has the site's shape:
+scale to zero, the same instance cap, the same explicit TCP startup probe, the site's empty
+runtime account and the site's image repository. The deployer gets `run.developer` on it and
+nothing else new, the cost cutoff turns it off with the site, and the uptime alerts watch
+its `robots.txt`.
+
+Its mapping asks for one CNAME to `ghs.googlehosted.com`, like `www`, because
+`kphutt.com` is already verified. That record is in `dns.tf`'s service list, DNS only.
+
+Like `cloud-run.tf`, `explorables.tf` does not ignore `template[0].revision`, and its deploy
+never names a revision (no `--tag` or `--revision-suffix` when it creates one). A name
+written into the template would make a later apply of any template change resend it and fail
+with a 409. `scripts/check_infra.py` refuses either change.
+
+Turning it on, in this order:
+
+1. Apply: from `infra/`, with `CLOUDFLARE_API_TOKEN` set, `mise exec -- tofu plan -out=site.tfplan`,
+   read it, then `mise exec -- tofu apply site.tfplan`. It creates the service on the
+   placeholder image, the mapping and the DNS record. Google issues the certificate once the
+   record resolves, usually within 15 minutes.
+2. `mise exec -- python infra/seed.py vars --apply` sets `EXPLORABLES_SERVICE`. Until then
+   the `explorables-deploy` job skips itself, and the site's deploy is unaffected either way.
+3. The next merge to `main`, or a manual run of `hugo.yml`, deploys the explorables image.
+   After that, `rollback.yml` with service `explorables` rolls back a bad deploy, and with
+   service `site` the main site. It fails, changing nothing, while `EXPLORABLES_SERVICE` is
+   unset.
+4. A pull request writes the new record's Cloudflare id into `dns.tf` in place of `null`.
+
 ## Alerts (`uptime.tf`)
 
 Two emails go to the alert channel, from uptime checks that fetch `https://<name>/robots.txt`
@@ -270,13 +305,14 @@ certificate):
   left (default 14). Google renews its managed certificates automatically, so this
   means it has not been renewed yet. Each alert says what to do.
 
-`kphutt.com` and `www.kphutt.com` are watched by default. Google follows redirects and judges the final answer, so `www`, which
+`kphutt.com` and `www.kphutt.com` are watched by default, and `explorables.kphutt.com` by its own
+check, which a `terraform.tfvars` setting `uptime_hostnames` cannot drop. Google follows redirects and judges the final answer, so `www`, which
 redirects to the apex, is held to the final 200. That still proves its certificate handshake
 and that the redirect lands on a live page. Its certificate-expiry alert measures the apex's
 certificate. To watch another name, add it to `uptime_hostnames` in the git-ignored `terraform.tfvars`.
 
 Cost is $0: uptime checks get 1,000,000 free executions a month per billing account (this
-setup uses about 17,000 with two names), alerts on uptime metrics are not charged, and
+setup uses about 26,000 with three names), alerts on uptime metrics are not charged, and
 `/robots.txt` is tiny ([pricing](https://cloud.google.com/stackdriver/pricing)).
 
 ## Cost

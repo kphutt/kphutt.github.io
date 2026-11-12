@@ -16,13 +16,16 @@ Personal website for Karsten Huttelmaier. Hugo static site, served from Cloud Ru
     them after review, and CI only deploys images. See `infra/README.md`.
   - `scripts/smoke.py`: run against a container or a Cloud Run candidate before it gets
     traffic.
+- Explorables: standalone interactive pages in `explorables/`, served from
+  `explorables.kphutt.com` by a second Cloud Run service. See "Explorables" below.
 
 ## Key Decisions
 - Single homepage does the heavy lifting; posts accrete under `content/posts/`
   (there is no `notes/` section — an earlier one was removed, and stale `public/notes/`
   output outlived it in working trees by four months)
 - PaperMod theme with custom homepage layout override (`layouts/index.html`)
-- No JavaScript at all, inline or otherwise. No build tools beyond Hugo.
+- No JavaScript at all on `kphutt.com`, inline or otherwise. No build tools beyond Hugo.
+  Interactive pages go to `explorables/`, on their own origin.
 - Content is markdown. Structure is in the content, not the theme.
 
 ## Commands
@@ -33,6 +36,8 @@ mise exec -- hugo                 # Build to /public
 python scripts/local_verify.py    # Run the CI build gate locally
 python scripts/check_infra.py     # Check infra/ offline (fmt, validate, plan tests)
 python scripts/smoke.py URL       # Smoke-test a running copy (pages, feeds, headers)
+python scripts/build_explorables.py && python scripts/check_explorables.py public-explorables
+python scripts/smoke_explorables.py URL   # Smoke-test a running explorables copy
 ```
 
 Hugo is pinned in `mise.toml` and must match `HUGO_VERSION` in the workflow. They are the
@@ -47,11 +52,11 @@ per clone, or there is no local gate at all and nothing says so:
 python -m pre_commit install --hook-type pre-commit --hook-type pre-push
 ```
 
-The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's two build commands
-verbatim and adds the preconditions CI gets from a fresh checkout: the pinned Hugo, and an
-empty output directory. `public/` is gitignored and Hugo does not purge files whose content is
-gone, so a working tree accumulates stale pages that fail the check locally and exist nowhere
-in CI.
+The pre-push hook runs `scripts/local_verify.py`, which runs the workflow's site and
+explorables build commands verbatim and adds the preconditions CI gets from a fresh checkout:
+the pinned Hugo, and an empty output directory. `public/` is gitignored and Hugo does not purge
+files whose content is gone, so a working tree accumulates stale pages that fail the check
+locally and exist nowhere in CI.
 
 ## Adding Content
 - New post: create `content/posts/your-post.md` with front matter (title, date, description)
@@ -63,7 +68,8 @@ in CI.
   `scripts/check_build.py`. It then builds the container, smoke-tests it, and deploys it to
   Cloud Run blue-green. A new revision starts at 0% traffic, is smoke-tested at its own URL,
   and is then promoted by exact name. If the smoke test fails, the old revision keeps serving.
-  `rollback.yml` points traffic back at an earlier revision.
+  `rollback.yml` points traffic back at an earlier revision of the service it is given
+  (`site` or `explorables`).
 - The deploy is keyless. GitHub's OIDC token is exchanged for a short-lived Google identity
   (Workload Identity Federation). No service account key is created. Only the `cloud-run`
   environment on `main` can use it (`infra/identities.tf`).
@@ -86,7 +92,7 @@ The built URLs stay correct whatever answers at the edge, because they come from
 rather than from the request.
 
 There is no fallback host, GitHub Pages included. Fix a problem on Cloud Run. After a bad
-deploy, run `rollback.yml` to point traffic back at an earlier revision.
+deploy, run `rollback.yml` with service `site` to point traffic back at an earlier revision.
 
 ### Do not turn the DNS proxy on
 Turning on Cloudflare's DNS proxy was evaluated and rejected, first for GitHub Pages and
@@ -140,6 +146,51 @@ CSP copy would be a second policy to keep in step. Add or change a header in `se
   both `pki.goog` and `letsencrypt.org`). A mismatch would fail with the same silent, delayed
   failure as above.
   DNSSEC is enabled, which closes most of the path CAA would defend.
+
+## Explorables
+Standalone interactive pages: JavaScript, SVG, toggles and static files, nothing that runs on
+a server. They are served from `https://explorables.kphutt.com/<slug>/`.
+
+**Why a separate origin.** `kphutt.com`'s policy is `script-src 'none'`, and
+`scripts/check_build.py` fails any script. Putting script under a path on `kphutt.com` would
+share its origin and mean loosening that gate. A subdomain is a separate origin to the
+browser, so the main site keeps its policy and gate unchanged, and nothing an explorable runs
+can reach the main site's pages.
+
+**Adding one:** a folder `explorables/<slug>/` with an `index.html`, its own script, style,
+image and font files, and a `README.md` (`explorables/README.md` has the steps). READMEs are
+for the repository: `scripts/build_explorables.py` leaves them out of the image, and
+generates `robots.txt` and `sitemap.xml`. `scripts/check_explorables.py` fails the build if a
+page has inline code or loads anything from another origin; if a folder has no README or
+index; if a README or dot-file would be served; or if the headers in
+`server/explorables.sws.toml` weaken.
+
+**Findable in search.** Explorables are meant to be found. The gate fails if any page but
+`404.html` says `noindex`, by meta tag or `X-Robots-Tag` header, so nobody hides a page by
+accident. It requires `404.html` to say `noindex`, since it answers for every missing path.
+Every other page needs a `<title>`, a `<meta name="description">` and a canonical link to
+its own absolute URL. `robots.txt` allows everything and names the sitemap, and the sitemap
+must list exactly the landing page and every explorable.
+
+**The policy** is the site's with these changes: `script-src 'self'`, `font-src 'self'`,
+`connect-src 'none'`, Trusted Types with no policy allowed (`require-trusted-types-for 'script'`
+and `trusted-types 'none'`), and `upgrade-insecure-requests`. Still no `'unsafe-inline'`,
+hashes or nonces, and pages make no network calls. Styles set through the CSSOM
+(`element.style`) are allowed by `style-src 'self'`; `style=` attributes are not. Every response
+also carries `Cross-Origin-Embedder-Policy: require-corp`, `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer`. HSTS has `includeSubDomains`, which covers only names under
+`explorables.kphutt.com`, and no `preload`: the preload list only takes an apex domain, and
+`kphutt.com` does not preload. Fonts and `favicon.svg` are cached for 30 days, never
+`immutable`, because their names carry no content hash.
+
+**Deploy:** `explorables.Dockerfile` (same pinned base image as the site), and the
+`explorables`, `explorables-image` and `explorables-deploy` jobs in `hugo.yml`. The deploy is
+blue-green like the site's, but its own job and queue, so it never blocks the site's. It
+creates the candidate revision without a tag and tags it afterwards. That keeps the
+service's template free of a revision name for a later `tofu apply` to resend
+(`infra/explorables.tf` explains). To roll back a bad explorables deploy, run `rollback.yml`
+with service `explorables` and the revision's name. It smoke-tests that revision with
+`scripts/smoke_explorables.py` before moving any traffic, and never touches the site.
 
 ## Git attribution
 

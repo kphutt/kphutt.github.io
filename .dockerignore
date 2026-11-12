@@ -1,4 +1,6 @@
-# The image needs the built site and the server config. Nothing else is sent to the build.
+# Each image needs its checked build and its server config. Nothing else is sent to the build.
 *
 !public/
 !server/sws.toml
+!public-explorables/
+!server/explorables.sws.toml

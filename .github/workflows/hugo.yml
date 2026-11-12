@@ -9,9 +9,16 @@ name: Build and deploy
 # after 60 days without repository activity. If that happens, re-enable this workflow in the
 # Actions tab.
 #
+# The same workflow builds, checks and deploys explorables.kphutt.com (explorables/), the
+# second service: jobs `explorables`, `explorables-image` and `explorables-deploy`. They run
+# beside the site's jobs, never in front of them, so the site's deploy does not wait on or
+# depend on them. The explorables deploy skips itself until EXPLORABLES_SERVICE is set,
+# which happens after `tofu apply` has created the service (infra/README.md).
+#
 # The required status check is `build`, a summary job at the end that passes only when
-# the site build (`site`), the container smoke test (`image`) and the infra checks
-# (`infra`) all pass. Branch protection names one check, and it covers all three.
+# the site build (`site`), the container smoke test (`image`), the infra checks (`infra`)
+# and the two explorables checks all pass. Branch protection names one check, and it
+# covers them all.
 #
 # The file name is part of the Cloud Run trust: infra/identities.tf allows only this file
 # and rollback.yml, on main, to deploy. Renaming it means changing that list too.
@@ -310,18 +317,197 @@ jobs:
               --remove-tags="$CAND_TAG" --quiet || true
           fi
 
+  # explorables/ copied without its READMEs, robots.txt and sitemap.xml generated, then
+  # checked: the same commands as scripts/local_verify.py runs at pre-push.
+  explorables:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the explorables
+        run: python3 scripts/build_explorables.py
+      - name: Check the built explorables
+        run: python3 scripts/check_explorables.py public-explorables
+      - name: Gate unit tests
+        run: python3 -m unittest discover -s scripts -p "test_*.py"
+      - name: Keep the checked build for the image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: explorables
+          path: public-explorables/
+          retention-days: 7
+          if-no-files-found: error
+
+  # The explorables container, built from the checked output and smoke-tested on the runner.
+  explorables-image:
+    needs: explorables
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Get the checked build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: explorables
+          path: public-explorables/
+      - name: Build the image
+        run: docker build --pull -f explorables.Dockerfile -t explorables:candidate .
+      - name: Run it and smoke-test it
+        run: |
+          docker run -d --name explorables -p 8080:8080 --read-only explorables:candidate
+          python3 scripts/smoke_explorables.py http://127.0.0.1:8080
+      - name: Show the server log if the smoke test failed
+        if: failure()
+        run: docker logs explorables || true
+      - name: Keep the image for the deploy job
+        if: github.event_name != 'pull_request'
+        run: docker save explorables:candidate | gzip > "${{ runner.temp }}/explorables-image.tar.gz"
+      - name: Upload the image
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: explorables-image
+          path: ${{ runner.temp }}/explorables-image.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  # Blue-green deploy of the explorables service, keyless, like the site's. It is a separate
+  # job with its own traffic queue, and nothing the site's deploy needs waits on it, so a
+  # failure here leaves the site's deploy alone. It skips itself until EXPLORABLES_SERVICE is
+  # set (infra/README.md).
+  #
+  # As in the site's deploy, the candidate revision is created without a tag and tagged
+  # afterwards. Creating a revision with --tag makes gcloud name it, and that name stays in
+  # the service's template, where a later `tofu apply` of any template change would resend it
+  # and get a 409 (infra/explorables.tf). scripts/check_infra.py refuses the flag, and this
+  # job also checks the template kept no name before any traffic moves.
+  explorables-deploy:
+    needs: [explorables, explorables-image, infra]
+    if: github.event_name != 'pull_request' && vars.WIF_PROVIDER != '' && vars.EXPLORABLES_SERVICE != ''
+    runs-on: ubuntu-24.04
+    environment: cloud-run # the only environment the Google identity trusts
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # the GitHub OIDC token WIF exchanges; nothing else
+    concurrency:
+      group: explorables-traffic
+      cancel-in-progress: false
+    env:
+      GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      SERVICE: ${{ vars.EXPLORABLES_SERVICE }}
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/${{ vars.ARTIFACT_REPO }}/explorables:${{ github.sha }}
+    steps:
+      - name: Checkout (for the smoke test and its expected headers)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Get the tested image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: explorables-image
+          path: ${{ runner.temp }}
+      - name: Load it
+        run: gunzip -c "${{ runner.temp }}/explorables-image.tar.gz" | docker load
+      - name: Authenticate to Google Cloud (WIF, no key)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Push the image and resolve its digest
+        run: |
+          echo "CAND_TAG=cand-${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          docker tag explorables:candidate "$IMAGE"
+          docker push "$IMAGE"
+          digest=$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')
+          python3 -c 'import re,sys; sys.exit(0 if re.fullmatch(r"sha256:[0-9a-f]{64}", sys.argv[1]) else "no digest for the pushed image: " + repr(sys.argv[1]))' "$digest"
+          echo "IMAGE_DIGEST=${IMAGE%:*}@${digest}" >> "$GITHUB_ENV"
+      # No tag and no revision suffix here: Cloud Run names the revision (see the job comment).
+      - name: Deploy the candidate revision at 0% traffic
+        run: |
+          gcloud run services update "$SERVICE" \
+            --image="$IMAGE_DIGEST" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --no-traffic --quiet
+          gcloud run services describe "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format=json > "${{ runner.temp }}/service.json"
+          python3 - "${{ runner.temp }}/service.json" <<'PY'
+          import json, os, sys
+          service = json.load(open(sys.argv[1]))
+          name = service["spec"]["template"].get("metadata", {}).get("name")
+          if name:
+              sys.exit(f"the service template names revision {name}; a later tofu apply would resend it (infra/explorables.tf)")
+          rev = service["status"].get("latestCreatedRevisionName")
+          if not rev:
+              sys.exit("no latest created revision")
+          image = service["spec"]["template"]["spec"]["containers"][0]["image"]
+          if image != os.environ["IMAGE_DIGEST"]:
+              sys.exit(f"the template runs {image}, not the pushed {os.environ['IMAGE_DIGEST']}")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"CAND_REV={rev}\n")
+          print(f"Candidate {rev}, 0% traffic, template unnamed")
+          PY
+      - name: Give the candidate a test URL (no traffic)
+        run: |
+          gcloud run revisions describe "$CAND_REV" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format='value(spec.containers[0].image)' > "${{ runner.temp }}/rev-image.txt"
+          python3 -c 'import os,sys; i=open(sys.argv[1]).read().strip(); r=os.environ["CAND_REV"]; sys.exit(0 if i == os.environ["IMAGE_DIGEST"] else f"revision {r} runs {i!r}, not the pushed image")' "${{ runner.temp }}/rev-image.txt"
+          gcloud run services update-traffic "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --update-tags="${CAND_TAG}=${CAND_REV}" --quiet
+          gcloud run services describe "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" --format=json > "${{ runner.temp }}/service.json"
+          python3 - "${{ runner.temp }}/service.json" <<'PY'
+          import json, os, sys
+          tag, rev = os.environ["CAND_TAG"], os.environ["CAND_REV"]
+          urls = [t["url"] for t in json.load(open(sys.argv[1]))["status"].get("traffic", [])
+                  if t.get("tag") == tag and t.get("revisionName") == rev and t.get("url")]
+          if len(urls) != 1:
+              sys.exit(f"could not find the test URL for tag {tag}")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"CAND_URL={urls[0]}\n")
+          print(f"Candidate {rev} at {urls[0]}")
+          PY
+      - name: Smoke-test the candidate
+        run: python3 scripts/smoke_explorables.py "$CAND_URL"
+      - name: Promote the smoke-tested revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT" \
+            --to-revisions="${CAND_REV}=100" --quiet
+          python3 scripts/move_live_tag.py "${IMAGE%:*}" "${IMAGE_DIGEST#*@}"
+          echo "### Deployed \`${CAND_REV}\` to 100% of explorables traffic" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the candidate tag
+        if: always()
+        run: |
+          if [ -n "${CAND_REV:-}" ]; then
+            gcloud run services update-traffic "$SERVICE" \
+              --region="$GCP_REGION" --project="$GCP_PROJECT" \
+              --remove-tags="$CAND_TAG" --quiet || true
+          fi
+
   # The one required status check. It passes only if every check above passed (a
-  # skipped job counts as a failure here), so the container and infra checks gate a merge
-  # as firmly as the site build does.
+  # skipped job counts as a failure here), so the container, infra and explorables checks
+  # gate a merge as firmly as the site build does.
   build:
-    needs: [site, image, infra]
+    needs: [site, image, infra, explorables, explorables-image]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: All checks passed
         env:
-          RESULTS: ${{ needs.site.result }} ${{ needs.image.result }} ${{ needs.infra.result }}
+          RESULTS: ${{ needs.site.result }} ${{ needs.image.result }} ${{ needs.infra.result }} ${{ needs.explorables.result }} ${{ needs.explorables-image.result }}
         run: |
-          echo "site, image, infra: $RESULTS"
-          python3 -c 'import os,sys; r=os.environ["RESULTS"].split(); sys.exit(0 if r == ["success"]*3 else "a required check did not pass")'
+          echo "site, image, infra, explorables, explorables-image: $RESULTS"
+          python3 -c 'import os,sys; r=os.environ["RESULTS"].split(); sys.exit(0 if r == ["success"]*5 else "a required check did not pass")'

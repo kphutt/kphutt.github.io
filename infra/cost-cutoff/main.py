@@ -2,7 +2,8 @@
 
 A Cloud Billing budget (infra/cost-cutoff.tf) publishes a message to a Pub/Sub topic several
 times a day. Each message triggers this function. If the month's actual cost (costAmount) is
-at or above CUTOFF_USD, it sets the site's Cloud Run ingress to internal only. The internet
+at or above CUTOFF_USD, it sets the Cloud Run ingress of every service in SERVICES to
+internal only: the site's, and the explorables service's. The internet
 then gets an error page from Google's front end and never reaches the service, so a flood of
 requests stops costing anything. Nothing is deleted: the service, its revisions and its
 images stay as they were, and one command reopens it (infra/cost-cutoff.md).
@@ -11,11 +12,13 @@ Only actual cost counts. The forecast fields in the message are ignored, so a fo
 spikes early in the month never takes the site down.
 
 Safe to run any number of times: Pub/Sub delivers at least once and the budget keeps sending
-messages, so a site that is already off is left alone and logged as such.
+messages, so a service that is already off is left alone and logged as such. If turning one
+service off fails, the error is raised and Pub/Sub retries: the ones already off stay off,
+and the rest are tried again.
 
 Environment (set by infra/cost-cutoff.tf):
-    SERVICE     projects/<project>/locations/<region>/services/<name> of the site
-    CUTOFF_USD  the spend, in US dollars, at which the site is turned off
+    SERVICES    comma-separated projects/<project>/locations/<region>/services/<name>
+    CUTOFF_USD  the spend, in US dollars, at which they are turned off
 """
 
 from __future__ import annotations
@@ -97,7 +100,12 @@ def turn_off(http, service: str) -> str:
     return "turned off"
 
 
-def handle_notification(notification: dict | None, service: str, cutoff: float, http_factory) -> str:
+def handle_notification(notification: dict | None, services: list[str], cutoff: float, http_factory) -> str:
+    """Turn every service off once spend is over the cutoff.
+
+    Returns "turned off" if this call turned any service off, "already off" if every one
+    already was, or why nothing was done.
+    """
     if notification is None:
         log("WARNING", "Ignored a message that is not a budget notification.")
         return "ignored"
@@ -105,18 +113,27 @@ def handle_notification(notification: dict | None, service: str, cutoff: float, 
     if not over_cutoff(notification, cutoff):
         log("INFO", "Spend is under the cutoff; nothing to do.", cost=cost, cutoff=cutoff)
         return "under cutoff"
-    result = turn_off(http_factory(), service)
-    if result == "already off":
-        log("INFO", "Spend is over the cutoff and the site is already off.", cost=cost, cutoff=cutoff, service=service)
-    else:
-        log("ALERT", "COST CUTOFF TRIPPED: spend reached the cutoff, so the site's ingress is now internal only. "
-            "See infra/cost-cutoff.md to reopen it.", cost=cost, cutoff=cutoff, service=service)
-    return result
+    http = http_factory()
+    results = []
+    for service in services:
+        result = turn_off(http, service)
+        results.append(result)
+        if result == "already off":
+            log("INFO", "Spend is over the cutoff and the service is already off.", cost=cost, cutoff=cutoff, service=service)
+        else:
+            log("ALERT", "COST CUTOFF TRIPPED: spend reached the cutoff, so the service's ingress is now internal only. "
+                "See infra/cost-cutoff.md to reopen it.", cost=cost, cutoff=cutoff, service=service)
+    return "turned off" if "turned off" in results else "already off"
+
+
+def services_from_env() -> list[str]:
+    raw = os.environ.get("SERVICES", "")
+    services = [s.strip() for s in raw.split(",") if s.strip()]
+    if not services or any(not s.startswith("projects/") or "/services/" not in s for s in services):
+        raise RuntimeError(f"SERVICES must be comma-separated projects/.../locations/.../services/..., got {raw!r}")
+    return services
 
 
 @functions_framework.cloud_event
 def handle(cloud_event) -> None:
-    service = os.environ.get("SERVICE", "")
-    if not service.startswith("projects/") or "/services/" not in service:
-        raise RuntimeError(f"SERVICE must be projects/.../locations/.../services/..., got {service!r}")
-    handle_notification(read_notification(cloud_event), service, cutoff_from_env(), session)
+    handle_notification(read_notification(cloud_event), services_from_env(), cutoff_from_env(), session)

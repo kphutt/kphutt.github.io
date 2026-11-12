@@ -15,8 +15,8 @@
 #   pre-push    the CI build gate -- the site builds in ~45ms, so running it before a push is
 #               free in practice, and a broken build never reaches GitHub.
 #
-# The pre-push hook mirrors the `build` job in .github/workflows/hugo.yml rather than
-# reimplementing it: scripts/local_verify.py runs that job's two commands verbatim. What it
+# The pre-push hook mirrors the `site` and `explorables` jobs in .github/workflows/hugo.yml
+# rather than reimplementing them: scripts/local_verify.py runs those jobs' commands verbatim. What it
 # adds is CI's preconditions -- the pinned Hugo from mise.toml, and a clean output directory,
 # because CI builds into a fresh checkout and a working tree does not. Both were real
 # failures; the script's docstring records them.
@@ -31,7 +31,7 @@ repos:
   - repo: local
     hooks:
       - id: local-verify
-        name: build the site and check it (mirrors the CI build job)
+        name: build the site and the explorables and check them (mirrors the CI site and explorables jobs)
         entry: python scripts/local_verify.py
         language: system
         pass_filenames: false

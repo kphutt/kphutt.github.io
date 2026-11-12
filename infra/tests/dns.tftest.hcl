@@ -73,6 +73,22 @@ override_resource {
   }
 }
 
+# explorables.kphutt.com's mapping (explorables.tf) asks for one CNAME, as www does.
+# tests/explorables.tftest.hcl tests it; here it only has to plan.
+override_resource {
+  target = google_cloud_run_domain_mapping.explorables
+  values = {
+    status = [{
+      conditions          = []
+      observed_generation = 1
+      mapped_route_name   = "explorables"
+      resource_records = [
+        { name = "explorables", type = "CNAME", rrdata = "ghs.googlehosted.com." },
+      ]
+    }]
+  }
+}
+
 variables {
   apex_verification_expected = "abc123def gv-mockedapex.dv.googlehosted.com"
   project_id                 = "test-site-project"
@@ -90,12 +106,13 @@ run "the_production_records_are_exactly_these" {
   command = plan
 
   assert {
-    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 1
-    error_message = "The zone has 20 production records: web (4 apex A, 4 apex AAAA, www), mail (7 MX, 3 TXT) and services (lodestar)."
+    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 2
+    error_message = "The zone has 21 production records: web (4 apex A, 4 apex AAAA, www), mail (7 MX, 3 TXT) and services (lodestar, explorables)."
   }
   assert {
     condition = toset([for r in values(cloudflare_dns_record.services) : "${r.name} ${r.type} ${r.content}"]) == toset([
       "lodestar.kphutt.com CNAME ghs.googlehosted.com",
+      "explorables.kphutt.com CNAME ghs.googlehosted.com",
     ])
     error_message = "A service record's name, type or value changed. Change it here and in dns.tf, in review."
   }
@@ -216,7 +233,7 @@ run "the_test_name_does_not_change_the_production_records" {
   }
 
   assert {
-    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 1 && length(cloudflare_dns_record.test) == 8
+    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 2 && length(cloudflare_dns_record.test) == 8
     error_message = "Turning the test name on adds its records and leaves the production records as they are."
   }
 }
@@ -233,6 +250,10 @@ run "the_web_records_are_what_the_mappings_ask_for" {
   assert {
     condition     = toset([for r in values(cloudflare_dns_record.web) : "${r.type} ${lower(r.content)}" if r.name == "www.kphutt.com"]) == local.www_mapping_expected && length([for r in values(cloudflare_dns_record.web) : r if r.name == "www.kphutt.com"]) == length(local.www_mapping_records)
     error_message = "The www records must be exactly local.www_mapping_records (site-domain.tf)."
+  }
+  assert {
+    condition     = toset([for r in values(cloudflare_dns_record.services) : "${r.type} ${lower(r.content)}" if r.name == "explorables.kphutt.com"]) == local.explorables_mapping_expected && length([for r in values(cloudflare_dns_record.services) : r if r.name == "explorables.kphutt.com"]) == length(local.explorables_mapping_records)
+    error_message = "The explorables record must be exactly local.explorables_mapping_records (explorables.tf)."
   }
 }
 
