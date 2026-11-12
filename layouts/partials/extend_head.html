@@ -35,3 +35,13 @@
   cannot drift apart.
 */ -}}
 <link rel="icon" type="image/svg+xml" href="{{ "favicon.svg" | relURL }}">
+{{- /*
+  The site's RSS feed, announced on every page. The theme links a feed only from pages that
+  have one of their own (the home page and the posts list), so a reader or crawler landing
+  on a post could not find it. RSS autodiscovery: https://www.rssboard.org/rss-autodiscovery
+*/ -}}
+{{- if not (.AlternativeOutputFormats.Get "rss") }}
+{{- with site.Home.OutputFormats.Get "rss" }}
+<link rel="alternate" type="application/rss+xml" href="{{ .Permalink }}" title="{{ site.Title }}">
+{{- end }}
+{{- end }}

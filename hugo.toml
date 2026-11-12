@@ -13,6 +13,17 @@ theme = "PaperMod"
 # documented companion switch, now in the right scope.
 enableRobotsTXT = true
 
+# Each page's last-modified date comes from the last commit that touched its file. It
+# feeds the sitemap's <lastmod>, dateModified in the structured data and the feed. Without
+# it, a page with no date of its own took the newest post's date, so the home page said it
+# had not changed since March. The workflow checks out full history (fetch-depth: 0),
+# which this needs.
+enableGitInfo = true
+
+# No tag or category pages. The site uses neither, so each was an empty list page in the
+# sitemap, which gives a search engine a page with nothing on it to crawl and judge.
+disableKinds = ["taxonomy", "term"]
+
 # content/LICENSE is the licence for the writing (CC BY 4.0). It sits beside the content it
 # covers so the licence travels with it, but it is not part of the site: without this,
 # Hugo copies it to /LICENSE in the build output. Matched against the full path, with
@@ -110,6 +121,11 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 
 # security.txt (RFC 9116). The page that renders it is content/security.md, which puts it
 # at /.well-known/security.txt; its template is layouts/_default/single.securitytxt.txt.
+# robots.txt is not another version of the home page, so the home page does not announce
+# it with <link rel="alternate">. Crawlers fetch it from its fixed address.
+[outputFormats.robots]
+  notAlternative = true
+
 [outputFormats.securitytxt]
   mediaType = "text/plain"
   baseName = "security"
