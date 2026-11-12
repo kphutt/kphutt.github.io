@@ -156,6 +156,17 @@ run "service_scales_to_zero_and_is_public" {
   }
 }
 
+# A named template makes a later template change resend that name, and Cloud Run refuses a
+# second revision under an existing name (409). cloud-run.tf leaves the name to Cloud Run.
+run "service_template_names_no_revision" {
+  command = plan
+
+  assert {
+    condition     = google_cloud_run_v2_service.site.template[0].revision == null
+    error_message = "The template must not name its revision; Cloud Run names each one (cloud-run.tf)."
+  }
+}
+
 run "region_outside_domain_mapping_is_refused" {
   command = plan
 

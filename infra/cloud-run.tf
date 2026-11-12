@@ -68,11 +68,16 @@ resource "google_cloud_run_v2_service" "site" {
     ignore_changes = [
       template[0].containers[0].image,
       # gcloud's deploy stamps its own client labels and annotations on the revision
-      # template (and names the revision). Without these, the next `tofu apply` after a
-      # deploy would roll a new revision only to remove them.
+      # template. Without these, the next `tofu apply` after a deploy would roll a new
+      # revision only to remove them.
       template[0].labels,
       template[0].annotations,
-      template[0].revision,
+      # template[0].revision is NOT ignored. It must stay empty, so that Cloud Run names
+      # each revision. Ignoring it would make every template change here resend the name
+      # of the revision now serving, and Cloud Run refuses that with a 409. The deploy
+      # never names a revision (hugo.yml), so a plan after a deploy has nothing to change.
+      # A revision this file makes gets no traffic, because traffic below stays pinned to
+      # the revision the deploy promoted by name. Only the deploy's smoke test promotes.
       # gcloud's image-only deploy writes service-level scaling and client fields that this
       # config does not declare; ignoring them keeps `tofu plan` clean after a deploy.
       scaling,

@@ -2,8 +2,9 @@
 """Check infra/ offline: formatting, validity, and the plan tests.
 
 Runs in CI (the `infra` job in .github/workflows/hugo.yml) and at pre-push when infra/
-changed (.pre-commit-config.yaml). First two static rules: the deploy workflows only use
-registry commands the deployer's role allows, and Cloudflare records are held to two
+changed (.pre-commit-config.yaml). First three static rules: the deploy workflows only use
+registry commands the deployer's role allows, they never name a revision (so OpenTofu can
+change the service template after a deploy), and Cloudflare records are held to two
 files: the production records (the live site at kphutt.com and www, and email) only in
 infra/dns.tf, with every value written out, and the test name's records only under the test
 name. Then the same four commands in both places:
@@ -104,6 +105,33 @@ def check_deployer_commands() -> bool:
             if NEEDS_DELETE.search(line):
                 print(f"{name}:{n}: needs a delete permission the deployer does not have: {line.strip()}")
                 ok = False
+    return ok
+
+
+# The service template's revision name must stay empty, so Cloud Run names every revision.
+# A deploy that passes --tag or --revision-suffix to `gcloud run services update` (or `gcloud
+# run deploy`) writes the name into the template. If cloud-run.tf ignored that field, its
+# next template change would resend the serving revision's name and Cloud Run would refuse
+# it with a 409. If it did not ignore it, every plan after a deploy would show a change.
+# So the deploy names nothing, and cloud-run.tf does not ignore the field.
+NAMES_REVISION = re.compile(r"gcloud\s+run\s+(?:services\s+update|deploy)\s(?=.*--(?:tag|revision-suffix)\b)")
+REVISION_IGNORED = re.compile(r"^\s*template\[0\]\.revision\s*,?\s*$", re.M)
+
+
+def check_revision_naming() -> bool:
+    ok = True
+    for name in DEPLOY_FILES:
+        if not name.endswith(".yml"):
+            continue
+        text = (REPO / name).read_text(encoding="utf-8")
+        # One shell command per line: fold the backslash continuations.
+        for line in re.sub(r"\\\n\s*", " ", text).splitlines():
+            if not line.lstrip().startswith("#") and NAMES_REVISION.search(line):
+                print(f"{name}: a deploy names the revision (--tag or --revision-suffix): {line.strip()}")
+                ok = False
+    if REVISION_IGNORED.search((INFRA / "cloud-run.tf").read_text(encoding="utf-8")):
+        print("infra/cloud-run.tf: ignore_changes lists template[0].revision")
+        ok = False
     return ok
 
 
@@ -602,6 +630,9 @@ def check_cloudflare(infra: Path = INFRA) -> bool:
 def main() -> int:
     if not check_deployer_commands():
         print("\ninfra check FAILED: a deploy step uses a registry command the deployer cannot run", file=sys.stderr)
+        return 1
+    if not check_revision_naming():
+        print("\ninfra check FAILED: the service template's revision name must stay empty", file=sys.stderr)
         return 1
     with tempfile.TemporaryDirectory(prefix="check-infra-") as tmp:
         infra = snapshot(Path(tmp))
