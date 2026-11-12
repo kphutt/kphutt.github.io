@@ -382,11 +382,11 @@ jobs:
   # failure here leaves the site's deploy alone. It skips itself until EXPLORABLES_SERVICE is
   # set (infra/README.md).
   #
-  # One difference from the site's deploy: the candidate revision is created without a tag
-  # and tagged afterwards. Creating a revision with --tag makes gcloud name it, and that name
-  # stays in the service's template, where a later `tofu apply` of any template change would
-  # resend it and get a 409 (infra/explorables.tf). scripts/check_infra.py refuses the flag
-  # here, and the deploy step checks the template kept no name before any traffic moves.
+  # As in the site's deploy, the candidate revision is created without a tag and tagged
+  # afterwards. Creating a revision with --tag makes gcloud name it, and that name stays in
+  # the service's template, where a later `tofu apply` of any template change would resend it
+  # and get a 409 (infra/explorables.tf). scripts/check_infra.py refuses the flag, and this
+  # job also checks the template kept no name before any traffic moves.
   explorables-deploy:
     needs: [explorables, explorables-image, infra]
     if: github.event_name != 'pull_request' && vars.WIF_PROVIDER != '' && vars.EXPLORABLES_SERVICE != ''

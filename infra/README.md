@@ -275,8 +275,8 @@ its `robots.txt`.
 Its mapping asks for one CNAME to `ghs.googlehosted.com`, like `www`, because
 `kphutt.com` is already verified. That record is in `dns.tf`'s service list, DNS only.
 
-Unlike `cloud-run.tf` today, `explorables.tf` does not ignore `template[0].revision`, and the
-deploy never names a revision (no `--tag` or `--revision-suffix` when it creates one). A name
+Like `cloud-run.tf`, `explorables.tf` does not ignore `template[0].revision`, and its deploy
+never names a revision (no `--tag` or `--revision-suffix` when it creates one). A name
 written into the template would make a later apply of any template change resend it and fail
 with a 409. `scripts/check_infra.py` refuses either change.
 

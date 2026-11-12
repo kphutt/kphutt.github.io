@@ -16,8 +16,8 @@
 # It runs as the site's empty runtime account and pulls from the site's image repository, so
 # it needs no new identity and no new repository grant.
 
-# The same shape as the site's service (cloud-run.tf), with one deliberate difference in what
-# is ignored: template[0].revision is NOT ignored.
+# The same shape as the site's service (cloud-run.tf), and like it, template[0].revision is
+# NOT ignored.
 #
 # Why: when a revision is created with a name, that name is written into the service's
 # template. gcloud writes one whenever it deploys with --tag or --revision-suffix (gcloud's
@@ -32,7 +32,7 @@
 #      --revision-suffix when it creates a revision. Cloud Run names the revision itself and
 #      the template keeps no name. The job tags the revision afterwards, with a traffic-only
 #      update, and fails before any traffic moves if the template has a name anyway.
-#      scripts/check_infra.py refuses either flag in that job;
+#      scripts/check_infra.py refuses either flag in every deploy workflow;
 #   2. the field is not ignored here. It is optional and not computed in the provider, so if
 #      a name ever does land in the template (a deploy by hand with --tag, say), the plan
 #      shows it being removed, and the apply sends no name. Cloud Run then names the new
