@@ -129,8 +129,12 @@ def parse_policy(policy: str) -> dict:
     return parsed
 
 
-def policy_problems(policy: str, required=REQUIRED_DIRECTIVES) -> list:
-    """Every way `policy` is weaker than POLICY_FLOOR. An empty list means it holds."""
+def policy_problems(policy: str, required=REQUIRED_DIRECTIVES, floor=POLICY_FLOOR) -> list:
+    """Every way `policy` is weaker than `floor`. An empty list means it holds.
+
+    The floor defaults to this site's. scripts/check_explorables.py passes its own, for the
+    explorables origin, and the rules are the same.
+    """
     problems = []
     if not policy.isascii() or any(ord(c) < 32 and c not in "\t\n\f\r" for c in policy):
         problems.append("contains non-ASCII or control characters, which browsers do not treat as separators")
@@ -141,7 +145,7 @@ def policy_problems(policy: str, required=REQUIRED_DIRECTIVES) -> list:
     for name, sources in parsed.items():
         if name in RESTRICT_ONLY:
             continue
-        allowed = POLICY_FLOOR.get(name, {"'none'"})
+        allowed = floor.get(name, {"'none'"})
         extra = [s for s in sources if s.lower() not in allowed]
         if extra:
             problems.append(f"{name} allows {' '.join(extra)} (the floor is {' '.join(sorted(allowed))})")
@@ -155,7 +159,11 @@ def policy_problems(policy: str, required=REQUIRED_DIRECTIVES) -> list:
 JSON_LD = re.compile(r"""(?:^|\s)type\s*=\s*["']?application/ld\+json["']?(?:\s|$)""", re.I)
 
 
-def check_inline_code(root: Path, failures: list) -> None:
+# A src attribute on its own, not data-src or similar.
+SRC_ATTR = re.compile(r"""(?:^|\s)src\s*=""", re.I)
+
+
+def check_inline_code(root: Path, failures: list, allow_external_scripts: bool = False) -> None:
     """The built site must contain no code the policy would have to allow.
 
     The policy is script-src 'none' with no 'unsafe-inline' and no hashes, which only
@@ -163,6 +171,10 @@ def check_inline_code(root: Path, failures: list) -> None:
     theme update reintroduces without anyone noticing, so look for every form of it:
     inline and external scripts, <style> elements, style= attributes, event-handler
     attributes and javascript: URLs. JSON-LD is data, not executed, so it stays.
+
+    allow_external_scripts lets through a <script src=...> with nothing between its tags,
+    for an origin whose policy is script-src 'self' (scripts/check_explorables.py). This
+    site never sets it. Where those loads point is check_explorables.py's to check.
     """
     # SVG files are documents too: opened directly, one can carry script or handlers.
     for path in sorted([*root.rglob("*.html"), *root.rglob("*.svg")]):
@@ -171,6 +183,8 @@ def check_inline_code(root: Path, failures: list) -> None:
 
         for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script\s*>", html, re.S | re.I):
             if JSON_LD.search(attrs):
+                continue
+            if allow_external_scripts and SRC_ATTR.search(attrs) and not body.strip():
                 continue
             kind = "external script" if "src=" in attrs.lower() else "inline script"
             snippet = " ".join((attrs + " " + body).split())[:60]
@@ -188,13 +202,16 @@ def check_inline_code(root: Path, failures: list) -> None:
             failures.append(f"{page}: javascript: URL is inline script")
 
 
-def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
+def check_no_outside_loads(root: Path, base: str, failures: list, allow_font_face: bool = False) -> None:
     """Nothing the browser fetches by itself may come from another origin.
 
     Outbound <a> links are fine -- the visitor clicks them, the page does not load them.
     Stylesheets, icons, preloads, images and CSS url()s are what the page loads, and the
     policy only allows this site for those. Catch it here rather than as a silent console
     error on the live site.
+
+    allow_font_face is for an origin whose policy has font-src 'self'
+    (scripts/check_explorables.py). The font's url() is still held to the same rule.
     """
     loads = []
     for path in sorted(root.rglob("*.html")):
@@ -223,7 +240,10 @@ def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
     for path in sorted(root.rglob("*.css")):
         css = path.read_text(encoding="utf-8", errors="replace")
         page = path.relative_to(root).as_posix()
-        if re.search(r"@import|@font-face", css, re.I):
+        if allow_font_face:
+            if re.search(r"@import", css, re.I):
+                failures.append(f"{page}: @import -- link each stylesheet from the page instead")
+        elif re.search(r"@import|@font-face", css, re.I):
             failures.append(f"{page}: @import or @font-face -- the policy has no font-src and loads no other sheet")
         for url in re.findall(r"url\(\s*['\"]?([^'\")]+)", css, re.I):
             loads.append((page, url))
@@ -239,19 +259,29 @@ def check_no_outside_loads(root: Path, base: str, failures: list) -> None:
             failures.append(f"{page}: loads {url} by absolute URL -- use a relative one (relURL)")
 
 
-def check_server_headers(failures: list) -> None:
+def check_server_headers(
+    failures: list,
+    config_path: Path = SERVER_CONFIG,
+    floor: dict = POLICY_FLOOR,
+    required_directives: tuple = REQUIRED_DIRECTIVES + ("frame-ancestors", "object-src"),
+    required_headers: dict = REQUIRED_SERVER_HEADERS,
+):
     """The server config must send the full header set, with a policy at or above the floor.
 
     This is the policy the site is served with. It covers frame-ancestors and applies to
     every response, including feeds, images and the 404 page. Loosening it below the floor
     fails the build.
+
+    The defaults are this site's. scripts/check_explorables.py passes the explorables
+    server's config and floor. Returns the catch-all rule's headers, lowercased, so a caller
+    can check more of them, or None if there is no catch-all rule to read.
     """
-    name = SERVER_CONFIG.relative_to(SERVER_CONFIG.parent.parent).as_posix()
+    name = config_path.relative_to(config_path.parent.parent).as_posix()
     try:
-        config = tomllib.loads(SERVER_CONFIG.read_text(encoding="utf-8"))
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as e:
         failures.append(f"{name} could not be read: {e}")
-        return
+        return None
 
     general = config.get("general", {})
     # The server's built-in versions of these would add HSTS with includeSubDomains and
@@ -264,7 +294,7 @@ def check_server_headers(failures: list) -> None:
     catch_all = [r for r in rules if r.get("source") == "**"]
     if not catch_all:
         failures.append(f"{name}: no catch-all [[advanced.headers]] rule with source = \"**\"")
-        return
+        return None
     # HTTP header names are case-insensitive but TOML keys are not, so a second,
     # differently-cased copy of a header could slip a weaker value past these checks.
     # Compare lowercased, and refuse duplicates outright.
@@ -294,8 +324,7 @@ def check_server_headers(failures: list) -> None:
     if not policy:
         failures.append(f"{name}: no Content-Security-Policy header")
     else:
-        required = REQUIRED_DIRECTIVES + ("frame-ancestors", "object-src")
-        for problem in policy_problems(policy, required):
+        for problem in policy_problems(policy, required_directives, floor):
             failures.append(f"{name}: Content-Security-Policy is weaker than the floor: {problem}")
 
     hsts = headers.get("strict-transport-security", "")
@@ -309,11 +338,12 @@ def check_server_headers(failures: list) -> None:
         if flag in hsts.lower():
             failures.append(f"{name}: Strict-Transport-Security has {flag}, which needs an explicit decision")
 
-    for header, allowed in REQUIRED_SERVER_HEADERS.items():
+    for header, allowed in required_headers.items():
         if headers.get(header.lower()) not in allowed:
             failures.append(f"{name}: {header} is {headers.get(header.lower())!r}, expected one of {sorted(allowed)}")
     if not headers.get("permissions-policy"):
         failures.append(f"{name}: no Permissions-Policy header")
+    return headers
 
 
 def check_theme_overrides(failures: list) -> None:
@@ -364,6 +394,16 @@ SECURITY_TXT = ".well-known/security.txt"
 SECURITY_CONTACT = "https://github.com/kphutt/kphutt.github.io/security/advisories/new"
 
 
+def hidden_files(root: Path, allowed=()) -> list:
+    """Every dot-file or dot-folder under root, or inside one, except the paths in allowed."""
+    return [
+        p.relative_to(root).as_posix()
+        for p in root.rglob("*")
+        if any(part.startswith(".") for part in p.relative_to(root).parts)
+        and p.relative_to(root).as_posix() not in allowed
+    ]
+
+
 def check_security_txt(root: Path, base: str, failures: list) -> None:
     """RFC 9116: the file exists, has its required fields, and Expires is neither past nor
     more than a year out. Expires is generated at build time, so this catches a template
@@ -398,12 +438,7 @@ def check_security_txt(root: Path, base: str, failures: list) -> None:
                 failures.append(f"{SECURITY_TXT}: Expires {expires.isoformat()} is more than a year away (RFC 9116)")
     # server/sws.toml serves dot-files so that .well-known can be reached, so nothing else
     # hidden may ride along in the image.
-    stray = [
-        p.relative_to(root).as_posix()
-        for p in root.rglob("*")
-        if any(part.startswith(".") for part in p.relative_to(root).parts)
-        and p.relative_to(root).as_posix() not in (".well-known", SECURITY_TXT)
-    ]
+    stray = hidden_files(root, allowed=(".well-known", SECURITY_TXT))
     if stray:
         failures.append(f"hidden files in build output, which the server would serve: {', '.join(sorted(stray))}")
 
