@@ -25,7 +25,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 
 [params]
   author = "Karsten Huttelmaier"
-  description = "Identity and security systems. Notes on what I find."
+  description = "I build identity and security infrastructure."
   ShowReadingTime = false
   ShowShareButtons = false
   ShowPostNavLinks = true
@@ -73,11 +73,21 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 # sameAs is how an engine learns that this site, that GitHub account and that LinkedIn
 # profile are one entity rather than three. It was previously empty, so nothing connected
 # them. Only genuinely equivalent profiles belong here.
+#
+# layouts/partials/templates/schema_json.html renders these, replacing the theme's version
+# of that file. It gives the person one @id, https://kphutt.com/#person, and every page
+# that mentions the author points at that @id, so the home page, each post and the
+# explorables site (which uses the same @id) all describe one entity. The description is
+# params.description above. knowsAbout repeats the topics the home page names.
 [params.schema]
   publisherType = "Person"
+  alternateName = "kphutt"
+  knowsAbout = ["Service identity", "PKI", "OAuth", "OpenID Connect"]
   sameAs = [
     "https://github.com/kphutt",
     "https://www.linkedin.com/in/karstenhuttelmaier",
+    "https://stackoverflow.com/users/165112/kphutt",
+    "https://x.com/kphutt",
   ]
 
 [menu]

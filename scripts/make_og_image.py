@@ -34,7 +34,7 @@ FG = (255, 255, 255, 255)
 MUTED = (155, 162, 172, 255)
 
 NAME = "Karsten Huttelmaier"
-TAGLINE = "Identity and security systems."
+TAGLINE = "I build identity and security infrastructure."
 DOMAIN = "kphutt.com"
 
 # Georgia, a serif.
