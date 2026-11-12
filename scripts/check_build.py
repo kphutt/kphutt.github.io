@@ -14,6 +14,7 @@ Run it against a build directory:
 """
 
 import hashlib
+import json
 import re
 import sys
 import tomllib
@@ -29,7 +30,7 @@ TEXT_SUFFIXES = {".html", ".xml", ".txt", ".json", ".css", ".js"}
 # Files the build is expected to publish, each with why it matters. All of these come from
 # configuration rather than from a file in content/, so losing one is silent.
 EXPECTED_FILES = {
-    "robots.txt": "crawler policy, including the AI training opt-out, would go unstated",
+    "robots.txt": "the crawler policy and the sitemap pointer would be gone",
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
@@ -37,6 +38,8 @@ EXPECTED_FILES = {
     # the internal-reference check below cannot see it. Losing it means every link preview
     # silently falls back to a bare URL.
     "og-image.png": "link previews would lose their image",
+    # Nothing links it. IndexNow engines fetch it to check the key scripts/indexnow.py sends.
+    "indexnow.txt": "IndexNow engines would reject every submission",
     # Linked from extend_head.html, so the reference check does cover it -- but it is
     # listed here too because losing it degrades silently to the raster fallback rather
     # than visibly breaking, which is exactly the kind of quiet regression that hides.
@@ -55,6 +58,10 @@ def expected_base_url() -> str:
     return match.group(1).rstrip("/")
 
 
+# robots.txt on the production origin (baseURL in hugo.toml). connect-src may name this
+# and nothing else.
+ROBOTS_URL = expected_base_url() + "/robots.txt"
+
 # The weakest Content Security Policy the site may ship. Each directive maps to the only
 # source expressions it may contain; a directive absent from the policy falls back to
 # default-src, which must be 'none'. The live policy may be stricter than this, never
@@ -65,6 +72,10 @@ POLICY_FLOOR = {
     "script-src": {"'none'"},
     "style-src": {"'self'"},
     "img-src": {"'self'"},
+    # One exact file, so Lighthouse can fetch robots.txt from the page (server/sws.toml says
+    # why). Compared as a whole source expression: 'self', the bare origin, a trailing
+    # slash (which would match a whole path prefix), a wildcard or another scheme all fail.
+    "connect-src": {"'none'", ROBOTS_URL},
     "object-src": {"'none'"},
     "base-uri": {"'none'"},
     "form-action": {"'none'"},
@@ -99,6 +110,7 @@ THEME = Path(__file__).resolve().parent.parent / "themes" / "PaperMod" / "layout
 OVERRIDDEN_THEME_FILES = {
     "_partials/head.html": "c7ef58590d6e4c755f1d2a575668095f3539475c61b39fdc12fd6e30025d30b0",
     "_partials/footer.html": "94921247defd67d205aaa2358d96365664e75de4a30d44b0ed36c6635c738543",
+    "_partials/templates/schema_json.html": "3fd05ccc156d8eda928c923776b53044097600c9c31a4812e3ebcfe9196b2ffa",
 }
 
 
@@ -158,6 +170,35 @@ def policy_problems(policy: str, required=REQUIRED_DIRECTIVES, floor=POLICY_FLOO
 # the text "ld+json" appearing anywhere among the attributes.
 JSON_LD = re.compile(r"""(?:^|\s)type\s*=\s*["']?application/ld\+json["']?(?:\s|$)""", re.I)
 
+# Any type attribute. A browser reads only the first of two, so a second one could hide a
+# script typed as JavaScript behind a JSON-LD type later in the tag. An attribute can
+# follow whitespace, a quote or a slash.
+TYPE_ATTR = re.compile(r"""(?:^|[\s"'/])type\s*=""", re.I)
+
+
+def json_ld_problem(attrs: str, body: str):
+    """Why a <script type="application/ld+json"> block is not plain data, or None.
+
+    A data block is never run, so the policy has nothing to allow for it. That only holds
+    for exactly what search engines read: one type attribute, no src, and a body that is a
+    JSON object or array. "<!--" and "<script" inside a script element change where the
+    browser ends it, so neither may appear. Templates write these blocks with jsonify,
+    which escapes "<", so a real one never contains either.
+    """
+    if len(TYPE_ATTR.findall(attrs)) != 1:
+        return "has more than one type attribute"
+    if SRC_ATTR.search(attrs):
+        return "has a src attribute"
+    if "<!--" in body or re.search(r"<script", body, re.I):
+        return 'contains "<!--" or "<script", which changes where the element ends'
+    try:
+        data = json.loads(body)
+    except ValueError as e:
+        return f"is not valid JSON ({e})"
+    if not isinstance(data, (dict, list)):
+        return "is not a JSON object or array"
+    return None
+
 
 # A src attribute on its own, not data-src or similar.
 SRC_ATTR = re.compile(r"""(?:^|\s)src\s*=""", re.I)
@@ -170,7 +211,8 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
     holds if the pages contain nothing that needs them. Inline code is exactly what a
     theme update reintroduces without anyone noticing, so look for every form of it:
     inline and external scripts, <style> elements, style= attributes, event-handler
-    attributes and javascript: URLs. JSON-LD is data, not executed, so it stays.
+    attributes and javascript: URLs. JSON-LD is data, not executed, so it stays, as long
+    as it is only data (json_ld_problem).
 
     allow_external_scripts lets through a <script src=...> with nothing between its tags,
     for an origin whose policy is script-src 'self' (scripts/check_explorables.py). This
@@ -183,6 +225,9 @@ def check_inline_code(root: Path, failures: list, allow_external_scripts: bool =
 
         for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script\s*>", html, re.S | re.I):
             if JSON_LD.search(attrs):
+                problem = json_ld_problem(attrs, body)
+                if problem:
+                    failures.append(f"{page}: JSON-LD block {problem}")
                 continue
             if allow_external_scripts and SRC_ATTR.search(attrs) and not body.strip():
                 continue

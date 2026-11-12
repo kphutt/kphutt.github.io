@@ -7,9 +7,11 @@
   the writing on prompt pipelines and backcasting, and the project table all live there.
   An index that omits it describes the wrong site.
 
-  So this adds two things to the theme's structure: the site description as the summary
-  line the llms.txt convention expects after the title, and an explicit link to the home
-  page. The recursive section printer below is the theme's, unchanged.
+  So this adds to the theme's structure: the site description as the summary line the
+  llms.txt format expects after the title (https://llmstxt.org/), a line saying whose site
+  this is, the author's profiles (params.schema.sameAs, the same list as the structured
+  data) and an explicit link to the home page. The recursive section printer below is the
+  theme's, unchanged.
 */ -}}
 
 {{- define "llms_print_section" -}}
@@ -31,10 +33,22 @@
 {{- end -}}
 
 {{- /* Main template */ -}}
+{{- $profileNames := dict "github.com" "GitHub" "www.linkedin.com" "LinkedIn" "stackoverflow.com" "Stack Overflow" "x.com" "X" -}}
 # {{ site.Title }}
 {{ with site.Params.description }}
 > {{ . }}
 {{ end }}
+This is the personal site of {{ site.Params.author }}{{ with site.Params.schema.alternateName }}, also known as {{ . }}{{ end }}. The home page is his background and what he has been learning and building: {{ site.Home.Permalink }}
+
+## Profiles
+{{ range site.Params.schema.sameAs }}
+- [{{ index $profileNames (urls.Parse .).Host | default (urls.Parse .).Host }}]({{ . }})
+{{- end }}
+
+## Explorables
+
+- [Explorables](https://explorables.kphutt.com/): interactive pages he made, on their own site
+
 ## Home
 
 - [{{ site.Title }}]({{ site.Home.Permalink }}): background, and notes on prompt pipelines and backcasting.

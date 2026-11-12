@@ -69,6 +69,15 @@ jobs:
           fetch-depth: 0
           # Hugo templates can read files in the project, so the token stays out of .git.
           persist-credentials: false
+      # lastmod comes from git (enableGitInfo in hugo.toml). In a shallow clone every page
+      # would get the date of the one commit present, and the sitemap, feed and structured
+      # data would all claim the whole site just changed. Fail rather than ship that.
+      - name: Refuse a shallow clone
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+            echo "::error::shallow clone: lastmod comes from git history, so the build needs fetch-depth: 0"
+            exit 1
+          fi
       - name: Build with Hugo
         env:
           HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
@@ -112,6 +121,8 @@ jobs:
         with:
           ref: ${{ github.base_ref }}
           submodules: recursive
+          # Full history, for the same reason as the checkout above: lastmod comes from git.
+          fetch-depth: 0
           path: .base
           persist-credentials: false
       - name: Report what this PR changes in the built site
@@ -295,6 +306,11 @@ jobs:
           PY
       - name: Smoke-test the candidate
         run: python3 scripts/smoke.py "$CAND_URL"
+      # The sitemap still being served, so the step after promotion can tell IndexNow which
+      # pages this deploy changed. It never fails the deploy.
+      - name: Save the live sitemap for IndexNow
+        continue-on-error: true
+        run: python3 scripts/indexnow.py snapshot "${{ runner.temp }}/sitemap-before.xml"
       - name: Promote the smoke-tested revision
         run: |
           gcloud run services update-traffic "$SERVICE" \
@@ -306,6 +322,12 @@ jobs:
           # deletes and recreates it, which needs tags.delete, which it does not.
           python3 scripts/move_live_tag.py "${IMAGE%:*}" "${IMAGE_DIGEST#*@}"
           echo "### Deployed \`${CAND_REV}\` to 100% of Cloud Run traffic" >> "$GITHUB_STEP_SUMMARY"
+      # Bing, Yandex and the other IndexNow engines recrawl the pages that changed. A
+      # failure here (the API down, say) leaves the site deployed and only waits for the
+      # engines to notice on their own, so it never fails the job.
+      - name: Tell IndexNow which pages changed
+        continue-on-error: true
+        run: python3 scripts/indexnow.py submit "${{ runner.temp }}/sitemap-before.xml"
       # Guarded on the tag, not the revision: a candidate that failed after being tagged
       # (its startup probe, say) must not leave its unverified URL reachable.
       - name: Remove the candidate tag
