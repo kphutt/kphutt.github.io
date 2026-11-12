@@ -48,17 +48,6 @@ resource "google_cloud_run_v2_service" "site" {
         startup_cpu_boost = true
       }
 
-      # A revision is Ready, and so eligible for traffic, only once / answers 200.
-      startup_probe {
-        http_get {
-          path = "/"
-          port = 8080
-        }
-        initial_delay_seconds = 0
-        timeout_seconds       = 2
-        period_seconds        = 3
-        failure_threshold     = 10
-      }
     }
   }
 
