@@ -56,12 +56,13 @@ locals {
   # kphutt.com. Never the apex, www, next or an underscore name (scripts/check_infra.py).
   # lodestar.kphutt.com is the lodestar service's Cloud Run domain mapping, read from that
   # mapping's status. explorables.kphutt.com is this project's second service: exactly what
-  # its mapping in explorables.tf asks for (tests/dns.tftest.hcl checks they match). id null:
-  # a new record, created by the apply. The pull request after the apply writes in the id
-  # Cloudflare gave it.
+  # its mapping in explorables.tf asks for (tests/dns.tftest.hcl checks they match). id null
+  # means a new record, created by the apply; the pull request after the apply writes in the
+  # id Cloudflare gave it, so a fresh state adopts the record instead of making a copy.
+  # explorables' id is written in. lodestar's is still null.
   service_records = {
     "lodestar"    = { id = null, name = "lodestar.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
-    "explorables" = { id = null, name = "explorables.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
+    "explorables" = { id = "f8e8e1420110c3f1ae27bb6987708c29", name = "explorables.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
   # Email. Only MX and TXT records.
