@@ -145,6 +145,28 @@ class InlineCode(GateTest):
         self.tree.edit(self.page(), "<circle ", "<circle onload=go() ")
         self.assertFails("onload=")
 
+    def test_styles_set_through_the_cssom_pass(self):
+        # el.style.cssText and a data-style hook the script reads are not style= attributes.
+        self.tree.edit(self.page(), '<button type="button"', '<button data-style="color: red" data-a-style="x" type="button"')
+        self.tree.edit(self.tree.root / "demo" / "demo.js", "draw());", 'draw()); el.style.cssText = "color: red"; el.setAttribute("data-style", "a");')
+        self.assertEqual(self.tree.failures(), [])
+
+    def test_style_attribute_in_capitals(self):
+        self.tree.edit(self.page(), '<button type="button"', '<button STYLE="color:red" type="button"')
+        self.assertFails("style= attribute")
+
+    def test_style_attribute_after_a_quote(self):
+        self.tree.edit(self.page(), '<button type="button"', '<button type="button"style="color:red"')
+        self.assertFails("style= attribute")
+
+    def test_style_attribute_in_svg(self):
+        self.tree.edit(self.page(), "<circle ", '<circle style="fill:red" ')
+        self.assertFails("style= attribute")
+
+    def test_style_attribute_in_an_svg_file(self):
+        (self.tree.root / "demo" / "icon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:red"/></svg>', encoding="utf-8")
+        self.assertFails("demo/icon.svg: inline style= attribute")
+
     def test_javascript_url(self):
         self.tree.edit(self.page(), "</body>", '<a href="javascript:go()">x</a></body>')
         self.assertFails("javascript: URL")
@@ -371,9 +393,9 @@ class Layout(GateTest):
         self.assertFails("same pinned image")
 
 
-CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
-       "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; "
-       "require-trusted-types-for 'script'")
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; "
+       "connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; "
+       "require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests")
 
 
 class Headers(GateTest):
@@ -412,13 +434,17 @@ class Headers(GateTest):
         self.csp("default-src 'none'", "default-src 'self'")
         self.assertFails("default-src allows 'self'")
 
-    def test_connect_src(self):
-        self.csp("form-action 'none'", "form-action 'none'; connect-src 'self'")
-        self.assertFails("connect-src")
+    def test_connect_src_self(self):
+        self.csp("connect-src 'none'", "connect-src 'self'")
+        self.assertFails("connect-src allows 'self'")
 
-    def test_even_connect_src_none(self):
-        self.csp("form-action 'none'", "form-action 'none'; connect-src 'none'")
-        self.assertFails("has connect-src")
+    def test_connect_src_another_origin(self):
+        self.csp("connect-src 'none'", "connect-src https://api.example.com")
+        self.assertFails("connect-src allows https://api.example.com")
+
+    def test_connect_src_left_out(self):
+        self.csp("connect-src 'none'; ", "")
+        self.assertFails("connect-src is missing")
 
     def test_an_unlisted_fetch_directive(self):
         self.csp("form-action 'none'", "form-action 'none'; script-src-elem 'self'")
@@ -430,7 +456,27 @@ class Headers(GateTest):
 
     def test_missing_trusted_types(self):
         self.csp("; require-trusted-types-for 'script'", "")
-        self.assertFails("require-trusted-types-for")
+        self.assertFails("require-trusted-types-for is missing")
+
+    def test_missing_trusted_types_policy_list(self):
+        self.csp("; trusted-types 'none'", "")
+        self.assertFails("trusted-types is missing")
+
+    def test_trusted_types_policy_allowed(self):
+        self.csp("trusted-types 'none'", "trusted-types default")
+        self.assertFails("must have trusted-types 'none'")
+
+    def test_trusted_types_with_duplicates_allowed(self):
+        self.csp("trusted-types 'none'", "trusted-types 'none' 'allow-duplicates'")
+        self.assertFails("must have trusted-types 'none'")
+
+    def test_missing_upgrade_insecure_requests(self):
+        self.csp("; upgrade-insecure-requests", "")
+        self.assertFails("upgrade-insecure-requests is missing")
+
+    def test_upgrade_insecure_requests_with_a_value(self):
+        self.csp("upgrade-insecure-requests", "upgrade-insecure-requests x")
+        self.assertFails("must have upgrade-insecure-requests")
 
     def test_trusted_types_with_another_value(self):
         # Browsers ignore a value other than 'script', which turns Trusted Types off.
@@ -450,7 +496,8 @@ class Headers(GateTest):
         self.assertFails("would keep every page out of search")
 
     def test_noindex_header_on_a_narrower_rule(self):
-        self.tree.edit(self.tree.config, 'headers.Cache-Control = "public, max-age=86400"', 'headers.X-Robots-Tag = "noindex"')
+        self.tree.edit(self.tree.config, 'headers.Cache-Control = "public, max-age=2592000"\n\n[[advanced.headers]]\nsource = "**/favicon.svg"',
+                       'headers.X-Robots-Tag = "noindex"\n\n[[advanced.headers]]\nsource = "**/favicon.svg"')
         self.assertFails("override the catch-all")
 
     def test_weaker_referrer_policy(self):
@@ -469,13 +516,64 @@ class Headers(GateTest):
         self.tree.edit(self.tree.config, 'Cross-Origin-Resource-Policy = "same-origin"\n', "")
         self.assertFails("Cross-Origin-Resource-Policy")
 
-    def test_hsts_include_subdomains(self):
-        self.tree.edit(self.tree.config, '"max-age=63072000"', '"max-age=63072000; includeSubDomains"')
-        self.assertFails("includesubdomains")
+    def test_missing_coep(self):
+        self.tree.edit(self.tree.config, 'Cross-Origin-Embedder-Policy = "require-corp"\n', "")
+        self.assertFails("Cross-Origin-Embedder-Policy")
+
+    def test_weaker_coep(self):
+        self.tree.edit(self.tree.config, '"require-corp"', '"unsafe-none"')
+        self.assertFails("Cross-Origin-Embedder-Policy")
+
+    def test_missing_x_frame_options(self):
+        self.tree.edit(self.tree.config, 'X-Frame-Options = "DENY"\n', "")
+        self.assertFails("X-Frame-Options")
+
+    def test_weaker_x_frame_options(self):
+        self.tree.edit(self.tree.config, 'X-Frame-Options = "DENY"', 'X-Frame-Options = "SAMEORIGIN"')
+        self.assertFails("X-Frame-Options")
+
+    def test_hsts_without_include_subdomains(self):
+        self.tree.edit(self.tree.config, '"max-age=63072000; includeSubDomains"', '"max-age=63072000"')
+        self.assertFails("must have includeSubDomains")
+
+    def test_hsts_preload(self):
+        self.tree.edit(self.tree.config, '"max-age=63072000; includeSubDomains"', '"max-age=63072000; includeSubDomains; preload"')
+        self.assertFails("has preload")
 
     def test_hsts_too_short(self):
-        self.tree.edit(self.tree.config, '"max-age=63072000"', '"max-age=600"')
+        self.tree.edit(self.tree.config, '"max-age=63072000; includeSubDomains"', '"max-age=600; includeSubDomains"')
         self.assertFails("max-age must be at least")
+
+    def test_compression_off(self):
+        self.tree.edit(self.tree.config, "compression = true", "compression = false")
+        self.assertFails("compression")
+
+    def test_compression_left_out(self):
+        self.tree.edit(self.tree.config, "compression = true\n", "")
+        self.assertFails("compression")
+
+    def test_short_font_cache(self):
+        self.tree.edit(self.tree.config, 'source = "**/*.{woff2,woff}"\nheaders.Cache-Control = "public, max-age=2592000"',
+                       'source = "**/*.{woff2,woff}"\nheaders.Cache-Control = "public, max-age=86400"')
+        self.assertFails("'**/*.{woff2,woff}' with Cache-Control max-age")
+
+    def test_short_favicon_cache(self):
+        self.tree.edit(self.tree.config, 'source = "**/favicon.svg"\nheaders.Cache-Control = "public, max-age=2592000"',
+                       'source = "**/favicon.svg"\nheaders.Cache-Control = "public, max-age=300"')
+        self.assertFails("'**/favicon.svg' with Cache-Control max-age")
+
+    def test_missing_favicon_rule(self):
+        self.tree.edit(self.tree.config, 'source = "**/favicon.svg"', 'source = "**/favicon.ico"')
+        self.assertFails("'**/favicon.svg' with Cache-Control max-age")
+
+    def test_immutable_on_an_unhashed_name(self):
+        self.tree.edit(self.tree.config, 'source = "**/*.{woff2,woff}"\nheaders.Cache-Control = "public, max-age=2592000"',
+                       'source = "**/*.{woff2,woff}"\nheaders.Cache-Control = "public, max-age=31536000, immutable"')
+        self.assertFails("is immutable")
+
+    def test_immutable_on_the_catch_all(self):
+        self.tree.edit(self.tree.config, 'Cache-Control = "public, max-age=300"', 'Cache-Control = "public, max-age=300, immutable"')
+        self.assertFails("is immutable")
 
     def test_permissions_policy_differs_from_the_site(self):
         self.tree.edit(self.tree.config, "camera=(), ", "")
@@ -486,8 +584,8 @@ class Headers(GateTest):
         self.assertFails("Cache-Control")
 
     def test_a_narrower_rule_overriding_a_security_header(self):
-        self.tree.edit(self.tree.config, 'headers.Cache-Control = "public, max-age=86400"',
-                       'headers.Content-Security-Policy = "default-src *"')
+        self.tree.edit(self.tree.config, 'source = "**/favicon.svg"\nheaders.Cache-Control = "public, max-age=2592000"',
+                       'source = "**/favicon.svg"\nheaders.Content-Security-Policy = "default-src *"')
         self.assertFails("override the catch-all")
 
     def test_builtin_security_headers_on(self):
@@ -513,6 +611,17 @@ class MainGateUnchanged(unittest.TestCase):
     def test_site_floor_still_refuses_script_src_self(self):
         self.assertTrue(any("script-src allows 'self'" in p for p in cb.policy_problems(
             "default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'")))
+
+    def test_site_still_refuses_include_subdomains(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = Path(tmp) / "server"
+            server.mkdir()
+            config = server / "sws.toml"
+            text = cb.SERVER_CONFIG.read_text(encoding="utf-8")
+            config.write_text(text.replace('"max-age=63072000"', '"max-age=63072000; includeSubDomains"'), encoding="utf-8")
+            failures = []
+            cb.check_server_headers(failures, config)
+            self.assertTrue(any("includesubdomains" in f for f in failures), failures)
 
     def test_site_headers_still_pass(self):
         failures = []
