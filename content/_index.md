@@ -45,6 +45,8 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 | [Identity Lab](https://github.com/kphutt/identity-lab) | Learn identity protocols by running them, not reading about them |
 | [Text Adventure](https://github.com/kphutt/text-adventure-v2) | A dungeon crawler in Go, because not everything has to be serious |
 
+Interactive pages that go with posts on this site live at [explorables.kphutt.com](https://explorables.kphutt.com/).
+
 ---
 
 [LinkedIn](https://www.linkedin.com/in/karstenhuttelmaier) ·
