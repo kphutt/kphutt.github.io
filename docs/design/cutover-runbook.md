@@ -65,13 +65,14 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 1. Do the one-time setup in `infra/README.md`, "The test name": the Cloudflare token, the
    zone id, and signing in with the Site Verification scope.
 2. Map the test name, option A in [the ADR](../decisions/0001-custom-domain-on-cloud-run.md):
-   set `test_domain_enabled = true` in `infra/site.tfvars`, then from `infra/`, with
-   `CLOUDFLARE_API_TOKEN` set:
+   set `test_domain_enabled = true` in `infra/site.tfvars` in a pull request, then once it
+   is merged, from the repository root:
    ```bash
-   mise exec -- tofu plan -out=site.tfplan
-   mise exec -- tofu apply site.tfplan
+   python scripts/apply_infra.py --plan-only
+   python scripts/apply_infra.py
    ```
-   Read the plan first: it must add only records named `next.kphutt.com` and
+   The script reads `CLOUDFLARE_API_TOKEN` from 1Password and passes `infra/site.tfvars`
+   to every plan (`infra/README.md`, "Applying"). Read the plan first: it must add only records named `next.kphutt.com` and
    `<token>.next.kphutt.com`, the ownership record and the mapping, and change nothing
    else. The apply proves ownership of the test name, creates the mapping and adds the four
    A and four AAAA records it asks for, DNS only (`infra/README.md` explains why a verified
@@ -100,15 +101,18 @@ Prerequisite: the infrastructure is applied and one deploy has run, so the servi
 
 ## Step 5 under option A: the apex, by domain mapping
 
-Only after step 4 is recorded and the decision is made. Three pull requests (A, B, C), applied by
-hand in order, each from `infra/` with `CLOUDFLARE_API_TOKEN` set and the Site Verification
-scope signed in (`infra/README.md`, "The test name", step 3). Each plan is saved and read
-before it is applied:
+Only after step 4 is recorded and the decision is made. Three pull requests (A, B, C), applied
+in order once each is merged, from the repository root with the Site Verification scope signed
+in (`infra/README.md`, "The test name", step 3). Each plan is read before it is applied:
 
 ```bash
-mise exec -- tofu plan -out=site.tfplan
-mise exec -- tofu apply site.tfplan
+python scripts/apply_infra.py --plan-only
+python scripts/apply_infra.py
 ```
+
+A plan that deletes or replaces anything, such as an undo below, is refused unless the
+command names each address it may delete (`--allow-delete cloudflare_dns_record.web`, for
+example), as in `infra/README.md`, "Applying".
 
 ### The certificate gap: read this before choosing a time
 

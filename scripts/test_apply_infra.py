@@ -260,6 +260,16 @@ class Secrets(unittest.TestCase):
                 ai.read_secrets(self.REFS)
 
 
+class OutputsChanged(unittest.TestCase):
+    def test_reads_output_changes(self):
+        self.assertTrue(ai.outputs_changed(plan("output_only.json")))
+        self.assertFalse(ai.outputs_changed(plan("no_changes.json")))
+        self.assertFalse(ai.outputs_changed({"output_changes": {"a": {"actions": ["no-op"]}}}))
+        self.assertTrue(ai.outputs_changed({"output_changes": {"a": {"actions": ["no-op"]},
+                                                               "b": {"actions": ["create"]}}}))
+        self.assertFalse(ai.outputs_changed({}))
+
+
 class DomainReady(unittest.TestCase):
     def test_ready(self):
         m = {"status": {"conditions": [{"type": "Ready", "status": "True"},
@@ -369,6 +379,17 @@ class Flow(unittest.TestCase):
         self.assertIn("Nothing to apply", out)
         self.assertIn(["mise", "exec", "--", "python", "x.py"], [c for c, _ in self.calls])
 
+    def test_output_only_plan_is_applied(self):
+        code, out = self.go("output_only.json", "--run", "after")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.tofu("apply")), 1)
+        self.assertNotIn("Nothing to apply", out)
+        self.assertIn("output values change", out)
+        names = [c for c, _ in self.calls]
+        self.assertLess(names.index(self.tofu("apply")[0][0]),
+                        names.index(["mise", "exec", "--", "python", "x.py"]),
+                        "seed-vars must run after the outputs are saved")
+
     def test_dirty_replan_exits_4(self):
         code, out = self.go("update_service.json", replan=2)
         self.assertEqual(code, 4)
@@ -381,7 +402,19 @@ class Flow(unittest.TestCase):
     def test_stray_tfvars_warns(self):
         (self.root / "infra" / "terraform.tfvars").write_text("x = 1\n", encoding="utf-8")
         _, out = self.go("update_service.json")
-        self.assertIn("WARNING: terraform.tfvars", out)
+        self.assertIn("WARNING: terraform.tfvars in infra/", out)
+        self.assertIn("overrides the TF_VAR_* values", out)
+
+    def test_auto_loaded_matches_what_opentofu_loads(self):
+        infra = self.root / "infra"
+        for name in ("terraform.tfvars", "terraform.tfvars.json", "x.auto.tfvars",
+                     "y.auto.tfvars.json", "old.tfvars", "site.tfvars", "notes.txt"):
+            (infra / name).write_text("", encoding="utf-8")
+        (infra / "dir.auto.tfvars").mkdir()
+        self.assertEqual(ai.auto_loaded(infra, ["site.tfvars"]),
+                         ["terraform.tfvars", "terraform.tfvars.json", "x.auto.tfvars", "y.auto.tfvars.json"])
+        self.assertEqual(ai.auto_loaded(infra, ["site.tfvars", "terraform.tfvars"]),
+                         ["terraform.tfvars.json", "x.auto.tfvars", "y.auto.tfvars.json"])
 
     def test_missing_var_file_stops(self):
         (self.root / "infra" / "site.tfvars").unlink()

@@ -59,6 +59,9 @@ CONFIG = REPO / "infra-apply.toml"
 QUIET = (["no-op"], ["read"])
 SAFE = {"create", "update"}
 ALLOWABLE = {"delete", "replace", "forget"}
+# The variable files OpenTofu reads on its own (and so a local one silently changes a plan).
+AUTO_LOADED = {"terraform.tfvars", "terraform.tfvars.json"}
+AUTO_LOADED_SUFFIXES = (".auto.tfvars", ".auto.tfvars.json")
 
 
 class Refused(Exception):
@@ -160,6 +163,18 @@ def load_config(path: Path) -> dict:
         secrets[name] = ref
     cfg["secrets"] = secrets
     return cfg
+
+
+def auto_loaded(infra: Path, var_files: list[str]) -> list[str]:
+    """Variable files OpenTofu loads without being told, other than the committed ones."""
+    return sorted(p.name for p in infra.iterdir() if p.is_file() and p.name not in var_files
+                  and (p.name in AUTO_LOADED or p.name.endswith(AUTO_LOADED_SUFFIXES)))
+
+
+def outputs_changed(plan: dict) -> bool:
+    """True if any output value changes. Outputs need no allowance, but they need an apply."""
+    return any(list(o.get("actions", ["no-op"])) != ["no-op"]
+               for o in plan.get("output_changes", {}).values())
 
 
 def tfvars_strings(text: str) -> dict[str, str]:
@@ -324,12 +339,12 @@ def main(argv: list[str] | None = None) -> int:
     for f in var_files:
         if not (infra / f).is_file():
             raise SystemExit(f"{infra / f} not found (named in {cfg_path.name})")
-    stray = sorted(p.name for p in infra.glob("*.tfvars") if p.name not in var_files) + \
-        sorted(p.name for p in infra.glob("*.auto.tfvars"))
+    stray = auto_loaded(infra, var_files)
     if stray:
-        print(f"WARNING: {', '.join(stray)} in {infra.name}/ is not committed and OpenTofu loads it "
-              f"automatically. The committed files {var_files} win where both set a key; move "
-              "anything else into them or into a [[secret]], then delete it.", flush=True)
+        print(f"WARNING: {', '.join(stray)} in {infra.name}/ is not committed, and OpenTofu loads it "
+              f"automatically. The committed files {var_files} win where both set a key, but it "
+              "overrides the TF_VAR_* values read from 1Password. Move anything else into the "
+              "committed files or into a [[secret]], then delete it.", flush=True)
 
     secret_env = {**os.environ}
     secret_env.update(read_secrets(missing_secrets(cfg.get("secrets", {}), os.environ)))
@@ -346,8 +361,11 @@ def main(argv: list[str] | None = None) -> int:
         plan_file = str(Path(tmp) / "infra.tfplan")
         run([*tofu, "plan", "-input=false", *var_args, f"-out={plan_file}"], infra, secret_env)
         shown = run([*tofu, "show", "-json", plan_file], infra, secret_env, capture=True)
-        found = changes(json.loads(shown.stdout))
-        print(f"\nPlanned changes ({len(found)}):\n{summary(found)}\n")
+        planned = json.loads(shown.stdout)
+        found = changes(planned)
+        outputs = outputs_changed(planned)
+        print(f"\nPlanned changes ({len(found)}):\n{summary(found)}\n"
+              + ("  and output values change\n" if outputs else ""))
         problems = check(found, allow)
         if problems:
             print("REFUSED, nothing applied:\n  " + "\n  ".join(problems))
@@ -355,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.plan_only:
             print("Plan only: the check passed, nothing applied.")
             return 0
-        if found:
+        if found or outputs:
             run([*tofu, "apply", "-input=false", plan_file], infra, secret_env)
         else:
             print("Nothing to apply.")
