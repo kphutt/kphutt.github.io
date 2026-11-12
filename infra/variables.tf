@@ -41,6 +41,31 @@ variable "github_repository_id" {
   }
 }
 
+# The explorables repository, which deploys the explorables service with its own identity
+# (explorables-repo.tf). Its id is known only once the repository exists; until it is set,
+# nothing from that repository can deploy.
+variable "explorables_github_repository" {
+  description = "owner/name of the repository that deploys the explorables service."
+  type        = string
+  default     = "kphutt/explorables"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.explorables_github_repository))
+    error_message = "explorables_github_repository must be owner/name."
+  }
+}
+
+variable "explorables_github_repository_id" {
+  description = "That repository's numeric GitHub id (gh api repos/OWNER/NAME --jq .id). Empty until the repository exists, which leaves its deploy identity unusable."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.explorables_github_repository_id == "" || can(regex("^[0-9]+$", var.explorables_github_repository_id))
+    error_message = "explorables_github_repository_id must be empty or the numeric repository id."
+  }
+}
+
 variable "billing_account" {
   description = "Billing account id (XXXXXX-XXXXXX-XXXXXX) the budget alert watches."
   type        = string

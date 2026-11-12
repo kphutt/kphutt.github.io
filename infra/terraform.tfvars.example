@@ -4,6 +4,8 @@ project_id           = "kphutt-site"           # the site's own GCP project
 region               = "us-west1"              # us-west1 or us-central1
 github_repository    = "kphutt/kphutt.github.io"
 github_repository_id = "1170454764"            # gh api repos/kphutt/kphutt.github.io --jq .id
+# The explorables repository's id, once it exists (explorables-repo.tf). Empty until then.
+# explorables_github_repository_id = "0000000000"  # gh api repos/kphutt/explorables --jq .id
 billing_account      = "XXXXXX-XXXXXX-XXXXXX"  # gcloud billing accounts list
 alert_email          = "you@example.com"       # where budget alerts go
 
