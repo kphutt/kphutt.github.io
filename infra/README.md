@@ -92,8 +92,9 @@ Optional steps after the apply:
 - `--deploy`: start `hugo.yml` on `main`, so a service created on the placeholder image gets
   the real one.
 - `--check-live MINUTES`: wait for every domain mapping in the project to be Ready and serve
-  a valid certificate, then run `scripts/smoke.py` and `scripts/smoke_explorables.py`
-  against the live names (`[live.smoke]` in `infra-apply.toml`). Needs `gcloud`.
+  a valid certificate, then run `scripts/smoke.py` against the live site names
+  (`[live.smoke]` in `infra-apply.toml`). `explorables.kphutt.com` is waited for but
+  smoke-tested by its own repository's deploy. Needs `gcloud`.
 
 Exit codes: 0 done and clean, 1 usage or setup error, 2 a command failed, 3 the plan was refused, 4 applied but the
 second plan still shows changes, 5 the live check failed.
@@ -325,44 +326,28 @@ The guards:
   plan deleting it).
 - `tests/dns.tftest.hcl` pins every name, type, value and MX priority.
 
-## Explorables (`explorables.tf`)
+## Explorables (`explorables.tf`, `explorables-repo.tf`)
 
-A second Cloud Run service, `explorables`, for the pages in `explorables/`, on its own origin
-so the site keeps `script-src 'none'` (`AGENTS.md`, "Explorables"). It has the site's shape:
-scale to zero, the same instance cap, the same explicit TCP startup probe, the site's empty
-runtime account and the site's image repository. The deployer gets `run.developer` on it and
-nothing else new, the cost cutoff turns it off with the site, and the uptime alerts watch
-its `robots.txt`.
+A second Cloud Run service, `explorables`, serves `explorables.kphutt.com`, on its own origin
+so the site keeps `script-src 'none'` (`AGENTS.md`, "Explorables"). Its pages, gate,
+container, deploy and rollback are in their own repository, `kphutt/explorables`. Its
+infrastructure is here, in the same state as the zone. The service has the site's shape:
+scale to zero, the same instance cap, the same explicit TCP startup probe and the site's
+empty runtime account. The cost cutoff turns it off with the site, and the uptime alerts
+watch its `robots.txt`.
 
 Its mapping asks for one CNAME to `ghs.googlehosted.com`, like `www`, because
 `kphutt.com` is already verified. That record is in `dns.tf`'s service list, DNS only.
 
-Like `cloud-run.tf`, `explorables.tf` does not ignore `template[0].revision`, and its deploy
-never names a revision (no `--tag` or `--revision-suffix` when it creates one). A name
-written into the template would make a later apply of any template change resend it and fail
-with a 409. `scripts/check_infra.py` refuses either change.
+Like `cloud-run.tf`, `explorables.tf` does not ignore `template[0].revision`, and the
+explorables deploy never names a revision (no `--tag` or `--revision-suffix` when it creates
+one). A name written into the template would make a later apply of any template change
+resend it and fail with a 409.
 
-Turning it on, in this order:
+### Its deploy identity (`explorables-repo.tf`)
 
-1. `python scripts/apply_infra.py --run seed-vars --deploy`. The apply creates the service
-   on the placeholder image, the mapping and the DNS record. Google issues the certificate
-   once the record resolves, usually within 15 minutes.
-2. `--run seed-vars` sets `EXPLORABLES_SERVICE`. Until then the `explorables-deploy` job
-   skips itself, and the site's deploy is unaffected either way.
-3. `--deploy` starts `hugo.yml` on `main`, which deploys the explorables image (so would the
-   next merge to `main`). Once that run is done, `python scripts/apply_infra.py --check-live 60`
-   waits for the certificate and smoke-tests the live names, `https://explorables.kphutt.com`
-   included.
-   After that, `rollback.yml` with service `explorables` rolls back a bad deploy, and with
-   service `site` the main site. It fails, changing nothing, while `EXPLORABLES_SERVICE` is
-   unset.
-4. A pull request writes the new record's Cloudflare id into `dns.tf` in place of `null`.
-
-### The explorables repository (`explorables-repo.tf`)
-
-Explorables are moving to their own repository, `kphutt/explorables`
-(`explorables_github_repository`), which deploys the same service with its own identity. That
-identity is the narrowest that can deploy it:
+`kphutt/explorables` (`explorables_github_repository`, by id in `site.tfvars`) deploys the
+service with an identity of its own, the narrowest that can:
 
 - **Its own service account,** `explorables-deployer`, never the site's `site-deployer`. It
   gets `run.developer` on the explorables service only, `artifactregistry.writer` on its own
@@ -372,32 +357,21 @@ identity is the narrowest that can deploy it:
   or tagged from that repository can touch the site's images.
 - **Its own WIF provider,** `github-explorables`, in the same pool. Its condition admits only
   that repository by numeric id, on `main`, from its `ci.yml` and `rollback.yml`, in the
-  `cloud-run` environment, from a push or a manual run. The site's provider and its deployer
-  binding are unchanged, and neither provider admits the other repository's id, so neither
-  repository can become the other's deployer.
+  `cloud-run` environment, from a push or a manual run. Neither provider admits the other
+  repository's id, so neither repository can become the other's deployer.
+
+This repository's deployer has no rights on the explorables service.
 
 The service keeps running as the site's runtime account rather than one of its own. That
 account holds no permissions, and a second one would also need the cost cutoff to act as it.
 
-Until `explorables_github_repository_id` is set, the provider and the binding are not
-created, `WIF_PROVIDER` in `tofu output explorables_github_variables` is empty, and that
-repository's deploy job skips itself. The site's own explorables deploy keeps working
-alongside, until this repository's explorables jobs are removed.
+If `explorables_github_repository_id` were emptied, the provider and the binding would go,
+`WIF_PROVIDER` in `tofu output explorables_github_variables` would be empty, and that
+repository's deploy job would skip itself.
 
-Turning it on, once the repository exists:
-
-1. `explorables_github_repository_id` in `site.tfvars` holds its id, from
-   `gh api repos/kphutt/explorables --jq .id`.
-2. `python scripts/apply_infra.py --run seed-explorables-env --run seed-explorables-vars`.
-   The apply creates the deployer, the image repository, the provider and their bindings. The
-   two steps then create that repository's `cloud-run` environment, `main` only, and set its
-   six repository variables. Its next merge to `main`, or a manual run of its `ci.yml`,
-   deploys.
-
-After its first good deploy, stop this repository deploying explorables: a pull request removes
-`explorables/` and its jobs here, `deployer_deploys_explorables` and `EXPLORABLES_SERVICE`.
-Until then both repositories can deploy the same service, and a merge to either one's `main`
-replaces what the other deployed.
+To set that repository up again (a new clone of the settings, say):
+`python scripts/apply_infra.py --run seed-explorables-env --run seed-explorables-vars`
+creates its `cloud-run` environment, `main` only, and sets its six repository variables.
 
 ## Alerts (`uptime.tf`)
 

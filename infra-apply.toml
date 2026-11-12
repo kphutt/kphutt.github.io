@@ -40,6 +40,7 @@ seed-explorables-vars = ["python", "infra/seed.py", "explorables-vars", "--apply
 
 # --check-live waits for every domain mapping in the project (project and region come from
 # var_files) to be Ready with a valid certificate, then runs these smoke tests against them.
+# explorables.kphutt.com's smoke test lives in kphutt/explorables, which runs it on every
+# deploy, so its mapping is waited for here but not smoke-tested.
 [live.smoke]
 "kphutt.com" = "scripts/smoke.py"
-"explorables.kphutt.com" = "scripts/smoke_explorables.py"

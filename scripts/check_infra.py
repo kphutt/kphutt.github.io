@@ -114,7 +114,7 @@ def check_deployer_commands() -> bool:
 # next template change would resend the serving revision's name and Cloud Run would refuse
 # it with a 409. If it did not ignore it, every plan after a deploy would show a change.
 # So the deploy names nothing, and cloud-run.tf does not ignore the field. The same holds for
-# the explorables service: its deploy job is in hugo.yml, scanned below, and its file is in
+# the explorables service, deployed from kphutt/explorables (whose own check refuses the flags); its file is in
 # SERVICE_FILES.
 NAMES_REVISION = re.compile(r"gcloud\s+(?:(?:alpha|beta)\s+)?run\s+(?:services\s+update|deploy)\s(?=.*--(?:tag|revision-suffix)\b)")
 REVISION_IGNORED = re.compile(r"^[^#\n]*template\[0\]\.revision\b", re.M)

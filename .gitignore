@@ -1,7 +1,5 @@
 # Hugo
 public/
-# The explorables build (scripts/build_explorables.py)
-public-explorables/
 resources/
 .hugo_build.lock
 

@@ -1,20 +1,21 @@
-# explorables.kphutt.com: standalone interactive pages (explorables/), on their own origin.
+# explorables.kphutt.com: standalone interactive pages, on their own origin. The pages and
+# their deploy are in their own repository, kphutt/explorables; the infrastructure is here.
 #
 # The main site's policy is script-src 'none'. An explorable runs its own script files, so it
 # is served from a second Cloud Run service on a subdomain, a separate origin as far as the
 # browser is concerned. The site keeps its policy and its gate unchanged, and nothing on this
-# origin can reach the site's pages. AGENTS.md, "Explorables", has the rules.
+# origin can reach the site's pages. AGENTS.md, "Explorables", says more.
 #
 # This file holds the service, its public access and its domain mapping. The rest sits where
 # its kind already lives:
 #
-#   dns.tf          the CNAME to ghs.googlehosted.com, among the service records
-#   identities.tf   the deployer's run.developer on this service
-#   cost-cutoff.tf  the cutoff turns this service off too
-#   uptime.tf       the uptime and certificate-expiry checks for this name
+#   dns.tf               the CNAME to ghs.googlehosted.com, among the service records
+#   explorables-repo.tf  the explorables repository's deployer, image repository and WIF
+#                        provider: the only identity that can deploy this service
+#   cost-cutoff.tf       the cutoff turns this service off too
+#   uptime.tf            the uptime and certificate-expiry checks for this name
 #
-# It runs as the site's empty runtime account and pulls from the site's image repository, so
-# it needs no new identity and no new repository grant.
+# It runs as the site's empty runtime account, so it needs no runtime identity of its own.
 
 # The same shape as the site's service (cloud-run.tf), and like it, template[0].revision is
 # NOT ignored.
@@ -28,11 +29,11 @@
 #
 # So two things keep this service clear of it:
 #
-#   1. its deploy job (.github/workflows/hugo.yml, explorables-deploy) never passes --tag or
+#   1. its deploy job (kphutt/explorables, .github/workflows/ci.yml) never passes --tag or
 #      --revision-suffix when it creates a revision. Cloud Run names the revision itself and
 #      the template keeps no name. The job tags the revision afterwards, with a traffic-only
-#      update, and fails before any traffic moves if the template has a name anyway.
-#      scripts/check_infra.py refuses either flag in every deploy workflow;
+#      update, and fails before any traffic moves if the template has a name anyway. That
+#      repository's scripts/check_workflows.py refuses either flag in its workflows;
 #   2. the field is not ignored here. It is optional and not computed in the provider, so if
 #      a name ever does land in the template (a deploy by hand with --tag, say), the plan
 #      shows it being removed, and the apply sends no name. Cloud Run then names the new
@@ -59,7 +60,7 @@ resource "google_cloud_run_v2_service" "explorables" {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
 
       ports {
-        container_port = 8080 # server/explorables.sws.toml listens here
+        container_port = 8080 # kphutt/explorables' server/sws.toml listens here
       }
 
       resources {

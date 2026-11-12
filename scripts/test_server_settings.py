@@ -2,9 +2,9 @@
 
     python -m unittest discover -s scripts -p "test_*.py"
 
-Each test starts from a copy of a real server config, turns one feature back on, leaves it
-out or misspells it, and checks the gate names it. Both configs are tested: the site's
-through check_build.py, and explorables' through check_explorables.py.
+Each test starts from a copy of the site's server config, turns one feature back on, leaves
+it out or misspells it, and checks the gate names it. explorables.kphutt.com's config is
+checked by the same rule in kphutt/explorables.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_build as cb  # noqa: E402
-import check_explorables as ce  # noqa: E402
 
 # A value that turns each feature back on.
 ON = {
@@ -46,7 +45,6 @@ ON = {
 }
 
 SITE = ("server/sws.toml", cb.SERVER_CONFIG, frozenset({"headers", "redirects"}))
-EXPLORABLES = ("server/explorables.sws.toml", ce.CONFIG, frozenset({"headers"}))
 
 
 class Settings(unittest.TestCase):
@@ -137,17 +135,8 @@ class Settings(unittest.TestCase):
         self.assertEqual(self.changed("idle-timeout", 1), [])
 
 
-class ExplorablesSettings(Settings):
-    config = EXPLORABLES
-
-    def test_redirects_fail(self):
-        parsed = copy.deepcopy(self.parsed)
-        parsed["advanced"]["redirects"] = [{"source": "/a", "destination": "/b", "kind": 301}]
-        self.assertNames(self.problems(parsed), "[advanced.redirects]")
-
-
 class Wired(unittest.TestCase):
-    """Both gates run the rule on the file they are given, not on parsed data."""
+    """The gate runs the rule on the file it is given, not on parsed data."""
 
     def edited(self, real: Path, old: str, new: str, run) -> list:
         with tempfile.TemporaryDirectory() as tmp:
@@ -176,17 +165,6 @@ class Wired(unittest.TestCase):
             (Path(tmp) / "server").mkdir()
             cb.check_server_settings(failures, Path(tmp) / "server" / "missing.toml")
         self.assertTrue(any("could not be read" in f for f in failures), failures)
-
-    def test_check_explorables_reads_its_config(self):
-        failures = self.edited(ce.CONFIG, "idle-timeout = 30", "idle-timeout = 0",
-                               lambda f, c: ce.check_server(f, c, cb.SERVER_CONFIG))
-        self.assertTrue(any("idle-timeout must be set" in f for f in failures), failures)
-
-    def test_check_explorables_refuses_the_sites_redirects(self):
-        rule = '\n[[advanced.redirects]]\nsource = "/a"\ndestination = "/b"\nkind = 301\n'
-        failures = self.edited(ce.CONFIG, "[advanced]\n", "[advanced]\n" + rule,
-                               lambda f, c: ce.check_server(f, c, cb.SERVER_CONFIG))
-        self.assertTrue(any("[advanced.redirects]" in f for f in failures), failures)
 
     def test_the_site_gate_runs_the_rule(self):
         # check_build.main is what CI runs, and it needs a built site, so read its code: it

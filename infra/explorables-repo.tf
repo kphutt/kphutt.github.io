@@ -25,9 +25,6 @@
 # Until explorables_github_repository_id is set (the repository has to exist first), the
 # provider and the binding that lets that repository become the deployer are not created, and
 # nothing can use the deployer.
-#
-# The site repository's own explorables deploy (deployer_deploys_explorables in
-# identities.tf) stays until that repository's explorables jobs are removed.
 
 locals {
   explorables_repo_enabled = var.explorables_github_repository_id != ""
