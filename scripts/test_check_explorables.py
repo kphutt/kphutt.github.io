@@ -25,8 +25,9 @@ PAGE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="robots" content="noindex, nofollow">
 <title>Demo</title>
+<meta name="description" content="A demo explorable.">
+<link rel="canonical" href="https://explorables.kphutt.com/demo/">
 <link rel="stylesheet" href="demo.css">
 </head>
 <body>
@@ -191,22 +192,140 @@ class OtherOrigins(GateTest):
         self.assertEqual(self.tree.failures(), [])
 
 
-class Noindex(GateTest):
-    def test_page_without_the_meta(self):
-        self.tree.edit(self.page(), '<meta name="robots" content="noindex, nofollow">', "")
-        self.assertFails("noindex")
+class Findable(GateTest):
+    def test_a_page_with_noindex(self):
+        self.tree.edit(self.page(), "<title>", '<meta name="robots" content="noindex"><title>')
+        self.assertFails("keeps the page out of search")
 
-    def test_meta_with_index(self):
-        self.tree.edit(self.page(), 'content="noindex, nofollow"', 'content="nofollow"')
-        self.assertFails("noindex")
+    def test_a_page_with_robots_none(self):
+        self.tree.edit(self.page(), "<title>", '<meta name="robots" content="none"><title>')
+        self.assertFails("keeps the page out of search")
 
-    def test_meta_with_follow(self):
-        self.tree.edit(self.page(), 'content="noindex, nofollow"', 'content="noindex"')
-        self.assertFails("noindex")
+    def test_a_page_with_noindex_for_one_crawler(self):
+        self.tree.edit(self.page(), "<title>", "<meta name=googlebot content='follow, NoIndex'><title>")
+        self.assertFails("keeps the page out of search")
 
-    def test_the_404_page_needs_it_too(self):
-        self.tree.edit(self.tree.root / "404.html", '<meta name="robots" content="noindex, nofollow">', "")
+    def test_the_landing_page_with_noindex(self):
+        self.tree.edit(self.tree.root / "index.html", "<title>", '<meta name="robots" content="noindex"><title>')
+        self.assertFails("index.html: a robots meta tag says noindex")
+
+    def test_nofollow_alone_is_allowed(self):
+        self.tree.edit(self.page(), "<title>", '<meta name="robots" content="nofollow"><title>')
+        self.assertEqual(self.tree.failures(), [])
+
+    def test_the_404_page_must_say_noindex(self):
+        self.tree.edit(self.tree.root / "404.html", '<meta name="robots" content="noindex">', "")
         self.assertFails("404.html: no <meta")
+
+    def test_missing_title(self):
+        self.tree.edit(self.page(), "<title>Demo</title>", "")
+        self.assertFails("no <title>")
+
+    def test_empty_title(self):
+        self.tree.edit(self.page(), "<title>Demo</title>", "<title> </title>")
+        self.assertFails("no <title>")
+
+    def test_missing_description(self):
+        self.tree.edit(self.page(), '<meta name="description" content="A demo explorable.">', "")
+        self.assertFails("description")
+
+    def test_empty_description(self):
+        self.tree.edit(self.page(), 'content="A demo explorable."', 'content=" "')
+        self.assertFails("description")
+
+    def test_two_descriptions(self):
+        self.tree.edit(self.page(), "<title>", '<meta name="description" content="Another."><title>')
+        self.assertFails("description")
+
+    def test_missing_canonical(self):
+        self.tree.edit(self.page(), '<link rel="canonical" href="https://explorables.kphutt.com/demo/">', "")
+        self.assertFails("canonical link is []")
+
+    def test_canonical_to_another_page(self):
+        self.tree.edit(self.page(), 'href="https://explorables.kphutt.com/demo/"', 'href="https://explorables.kphutt.com/"')
+        self.assertFails("canonical link")
+
+    def test_canonical_on_another_host(self):
+        self.tree.edit(self.page(), 'href="https://explorables.kphutt.com/demo/"', 'href="https://kphutt.com/demo/"')
+        self.assertFails("canonical link")
+
+    def test_relative_canonical(self):
+        self.tree.edit(self.page(), 'href="https://explorables.kphutt.com/demo/"', 'href="/demo/"')
+        self.assertFails("canonical link")
+
+
+class Discovery(GateTest):
+    def sitemap(self) -> Path:
+        return self.tree.root / "sitemap.xml"
+
+    def test_the_build_lists_every_explorable(self):
+        text = self.sitemap().read_text(encoding="utf-8")
+        self.assertIn("<loc>https://explorables.kphutt.com/</loc>", text)
+        self.assertIn("<loc>https://explorables.kphutt.com/demo/</loc>", text)
+        self.assertIn("Sitemap: https://explorables.kphutt.com/sitemap.xml",
+                      (self.tree.root / "robots.txt").read_text(encoding="utf-8"))
+
+    def test_the_build_refuses_a_hand_written_sitemap(self):
+        (self.tree.source / "sitemap.xml").write_text("<urlset/>", encoding="utf-8")
+        with self.assertRaises(SystemExit):
+            self.tree.build()
+
+    def test_an_explorable_missing_from_the_sitemap(self):
+        self.tree.edit(self.sitemap(), "  <url><loc>https://explorables.kphutt.com/demo/</loc></url>\n", "")
+        self.assertFails("does not list https://explorables.kphutt.com/demo/")
+
+    def test_the_landing_page_missing_from_the_sitemap(self):
+        self.tree.edit(self.sitemap(), "  <url><loc>https://explorables.kphutt.com/</loc></url>\n", "")
+        self.assertFails("does not list https://explorables.kphutt.com/")
+
+    def test_a_path_that_is_not_built(self):
+        self.tree.edit(self.sitemap(), "</urlset>", "  <url><loc>https://explorables.kphutt.com/gone/</loc></url>\n</urlset>")
+        self.assertFails("not a page in the build")
+
+    def test_a_file_that_is_not_a_page(self):
+        self.tree.edit(self.sitemap(), "</urlset>", "  <url><loc>https://explorables.kphutt.com/demo/demo.js</loc></url>\n</urlset>")
+        self.assertFails("not a page in the build")
+
+    def test_a_page_without_its_trailing_slash(self):
+        # /demo only redirects to /demo/, so it is not the page's URL.
+        self.tree.edit(self.sitemap(), "https://explorables.kphutt.com/demo/</loc>", "https://explorables.kphutt.com/demo</loc>")
+        self.assertFails("not a page in the build")
+
+    def test_a_url_on_another_host(self):
+        self.tree.edit(self.sitemap(), "</urlset>", "  <url><loc>https://kphutt.com/</loc></url>\n</urlset>")
+        self.assertFails("not an absolute URL on")
+
+    def test_a_relative_url(self):
+        self.tree.edit(self.sitemap(), "</urlset>", "  <url><loc>/demo/</loc></url>\n</urlset>")
+        self.assertFails("not an absolute URL on")
+
+    def test_a_url_listed_twice(self):
+        self.tree.edit(self.sitemap(), "</urlset>", "  <url><loc>https://explorables.kphutt.com/demo/</loc></url>\n</urlset>")
+        self.assertFails("twice")
+
+    def test_invalid_xml(self):
+        self.sitemap().write_text("<urlset", encoding="utf-8")
+        self.assertFails("not valid XML")
+
+    def test_missing_sitemap(self):
+        self.sitemap().unlink()
+        self.assertFails("sitemap.xml missing")
+
+    def test_missing_robots_txt(self):
+        (self.tree.root / "robots.txt").unlink()
+        self.assertFails("robots.txt missing")
+
+    def test_robots_txt_without_the_sitemap(self):
+        self.tree.edit(self.tree.root / "robots.txt", "Sitemap: https://explorables.kphutt.com/sitemap.xml\n", "")
+        self.assertFails("no 'Sitemap:")
+
+    def test_robots_txt_blocking_everything(self):
+        self.tree.edit(self.tree.root / "robots.txt", "Allow: /", "Disallow: /")
+        self.assertFails("keeps pages out of search")
+
+    def test_robots_txt_blocking_one_explorable(self):
+        self.tree.edit(self.tree.root / "robots.txt", "Allow: /", "Allow: /\nDisallow: /demo/")
+        self.assertFails("keeps pages out of search")
 
 
 class Layout(GateTest):
@@ -322,13 +441,17 @@ class Headers(GateTest):
         self.tree.edit(self.tree.config, "Content-Security-Policy = ", "X-Not-A-Policy = ")
         self.assertFails("no Content-Security-Policy")
 
-    def test_missing_robots_header(self):
-        self.tree.edit(self.tree.config, 'X-Robots-Tag = "noindex, nofollow"\n', "")
-        self.assertFails("X-Robots-Tag")
+    def test_noindex_header(self):
+        self.tree.edit(self.tree.config, 'Cache-Control = "public, max-age=300"', 'Cache-Control = "public, max-age=300"\nX-Robots-Tag = "noindex"')
+        self.assertFails("would keep every page out of search")
 
-    def test_weaker_robots_header(self):
-        self.tree.edit(self.tree.config, 'X-Robots-Tag = "noindex, nofollow"', 'X-Robots-Tag = "nofollow"')
-        self.assertFails("X-Robots-Tag")
+    def test_robots_none_header(self):
+        self.tree.edit(self.tree.config, 'Cache-Control = "public, max-age=300"', 'Cache-Control = "public, max-age=300"\nX-Robots-Tag = "none"')
+        self.assertFails("would keep every page out of search")
+
+    def test_noindex_header_on_a_narrower_rule(self):
+        self.tree.edit(self.tree.config, 'headers.Cache-Control = "public, max-age=86400"', 'headers.X-Robots-Tag = "noindex"')
+        self.assertFails("override the catch-all")
 
     def test_weaker_referrer_policy(self):
         self.tree.edit(self.tree.config, '"no-referrer"', '"strict-origin-when-cross-origin"')
