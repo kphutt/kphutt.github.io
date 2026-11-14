@@ -83,7 +83,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 #
 # sameAs is how an engine learns that this site, that GitHub account and that LinkedIn
 # profile are one entity rather than three. It was previously empty, so nothing connected
-# them. Only genuinely equivalent profiles belong here.
+# them. Only profiles that show real work belong here: GitHub, LinkedIn and Stack Overflow.
 #
 # layouts/partials/templates/schema_json.html renders these, replacing the theme's version
 # of that file. It gives the person one @id, https://kphutt.com/#person, and every page
@@ -99,9 +99,11 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
     "https://github.com/kphutt",
     "https://www.linkedin.com/in/karstenhuttelmaier",
     "https://stackoverflow.com/users/165112/kphutt",
-    "https://x.com/kphutt",
-    "https://infosec.exchange/@kphutt",
   ]
+  # Profiles that only verify ownership with rel="me" (the Mastodon green check). They are
+  # not claimed as the same person, so they stay out of sameAs, the JSON-LD and llms.txt.
+  # layouts/partials/extend_head.html emits rel="me" for sameAs plus this list.
+  relMeOnly = ["https://infosec.exchange/@kphutt"]
 
 [menu]
   [[menu.main]]

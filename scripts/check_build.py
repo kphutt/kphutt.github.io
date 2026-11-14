@@ -558,12 +558,18 @@ def check_security_txt(root: Path, base: str, failures: list) -> None:
         failures.append(f"hidden files in build output, which the server would serve: {', '.join(sorted(stray))}")
 
 
+def rel_me_profiles(config):
+    """Every profile the homepage must link back with rel="me": sameAs plus relMeOnly."""
+    schema = config.get("params", {}).get("schema", {})
+    return list(schema.get("sameAs", [])) + list(schema.get("relMeOnly", []))
+
+
 def rel_me_problems(html: str, same_as: list) -> list:
     """The profile links the page must carry as rel="me", but does not.
 
     Mastodon verifies a profile link only when the linked page points back with rel="me".
-    layouts/partials/extend_head.html writes one per params.schema.sameAs entry, so the
-    build must hold one for every entry (Hugo may leave the attributes unquoted).
+    layouts/partials/extend_head.html writes one per params.schema.sameAs and params.schema.relMeOnly
+    entry, so the build must hold one for every entry (Hugo may leave the attributes unquoted).
     """
     found = set()
     for tag in re.findall(r"<link\b[^>]*>", html, re.I):
@@ -614,10 +620,10 @@ def main() -> int:
         elif canonical.group(1).rstrip("/") != base:
             failures.append(f"canonical is {canonical.group(1)}, expected {base}/")
 
-    # 2b. Every sameAs profile must be linked back with rel="me" (Mastodon verification).
+    # 2b. Every sameAs and relMeOnly profile must be linked back with rel="me" (Mastodon verification).
     if index.is_file():
-        same_as = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {}).get("schema", {}).get("sameAs", [])
-        failures += [f"homepage: {p}" for p in rel_me_problems(html, same_as)]
+        profiles = rel_me_profiles(tomllib.loads(CONFIG.read_text(encoding="utf-8")))
+        failures += [f"homepage: {p}" for p in rel_me_problems(html, profiles)]
 
     # 3. Files the site is supposed to publish must actually be published.
     #

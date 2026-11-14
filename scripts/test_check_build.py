@@ -12,6 +12,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -43,6 +44,34 @@ class RelMe(unittest.TestCase):
     def test_a_plain_anchor_does_not_count(self):
         html = "".join(f'<a rel="me" href="{u}">x</a>' for u in self.URLS)
         self.assertEqual(len(cb.rel_me_problems(html, self.URLS)), 2)
+
+
+class RelMeConfig(unittest.TestCase):
+    """hugo.toml: rel=me covers sameAs and relMeOnly, and only sameAs is claimed identity."""
+
+    def setUp(self):
+        import tomllib
+        self.config = tomllib.loads(cb.CONFIG.read_text(encoding="utf-8"))
+        self.schema = self.config["params"]["schema"]
+        self.profiles = cb.rel_me_profiles(self.config)
+
+    def test_gate_list_has_every_sameas_and_mastodon(self):
+        for u in self.schema["sameAs"] + ["https://infosec.exchange/@kphutt"]:
+            self.assertIn(u, self.profiles)
+
+    def test_mastodon_verifies_but_is_not_claimed(self):
+        self.assertIn("https://infosec.exchange/@kphutt", self.schema["relMeOnly"])
+        self.assertNotIn("https://infosec.exchange/@kphutt", self.schema["sameAs"])
+        hosts = [urllib.parse.urlsplit(u).hostname for u in self.schema["sameAs"]]
+        self.assertFalse([h for h in hosts if h in ("x.com", "twitter.com")])
+
+    def test_a_missing_relmeonly_link_fails(self):
+        html = "".join(f"<link rel=me href={u}>" for u in self.schema["sameAs"])
+        self.assertEqual(len(cb.rel_me_problems(html, self.profiles)), len(self.schema["relMeOnly"]))
+
+    def test_a_missing_sameas_link_fails(self):
+        html = "".join(f"<link rel=me href={u}>" for u in self.schema["relMeOnly"])
+        self.assertEqual(len(cb.rel_me_problems(html, self.profiles)), len(self.schema["sameAs"]))
 
 
 class NoScriptNoFonts(unittest.TestCase):
