@@ -292,9 +292,10 @@ PRODUCTION = {
     "mail": {"list": "mail_records", "types": {"MX", "TXT"},
              "names": None, "prevent_destroy": "true", "new_records": False,
              # The handle record stays in its own list, and no wildcard name is ever a record.
-             "name_ok": lambda n: n != IDENTITY_NAME and "*" not in n},
+             "handle_and_wildcards_refused": True},
     "services": {"list": "service_records", "types": {"CNAME"},
                  "names": None, "prevent_destroy": "true", "new_records": True,
+                 "handle_and_wildcards_refused": True,
                  "name_ok": lambda n: bool(SERVICE_NAME.match(n)) and n not in SERVICE_NAME_REFUSED,
                  "value_ok": lambda v: v == "ghs.googlehosted.com"},
     "identity": {"list": "identity_records", "types": {"TXT"},
@@ -388,13 +389,11 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if rid == "null" and not rule["new_records"]:
             problems.append(f"local.{lst}[{key}]: id is null, but every record in this list must "
                             "exist and be adopted")
-        # DNS names are case-insensitive and may end in a dot, so every refusal compares the
-        # normalized name. A rule that pins exact names ("names") compares the literal text,
-        # so a variant spelling of an allowed name is refused too.
-        norm = rname.lower().rstrip(".")
-        if not (norm == ZONE or norm.endswith("." + ZONE)):
+        # Every rule below runs on the name exactly as written, so a spelling that is not
+        # canonical (capitals, a trailing dot) is refused wherever it was before.
+        if not (rname == ZONE or rname.endswith("." + ZONE)):
             problems.append(f"local.{lst}[{key}]: {rname} is not in the {ZONE} zone")
-        if norm == TEST_NAME or norm.endswith("." + TEST_NAME):
+        if rname == TEST_NAME or rname.endswith("." + TEST_NAME):
             problems.append(f"local.{lst}[{key}]: {rname} belongs to test-domain.tf, not here")
         if rtype not in rule["types"]:
             problems.append(f"local.{lst}[{key}]: a {rtype} record does not belong in this list "
@@ -402,9 +401,16 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if rule["names"] is not None and rname not in rule["names"]:
             problems.append(f"local.{lst}[{key}]: {rname} does not belong in this list "
                             f"(only {sorted(rule['names'])})")
-        if "name_ok" in rule and not rule["name_ok"](norm):
+        if "name_ok" in rule and not rule["name_ok"](rname):
             problems.append(f"local.{lst}[{key}]: {rname} is not allowed here (one label under "
                             f"{ZONE}, never the apex, www or the test name)")
+        # The one use of a normalized name (lowercase, no trailing dot): DNS treats those
+        # spellings as the same name, so the handle name and wildcards are refused in every
+        # list but the identity list whatever the spelling.
+        if rule.get("handle_and_wildcards_refused") and (
+                rname.lower().rstrip(".") == IDENTITY_NAME or "*" in rname):
+            problems.append(f"local.{lst}[{key}]: {rname} is not allowed here (the Bluesky handle "
+                            "name lives only in the identity list, and no wildcard names)")
         if "value_ok" in rule and not rule["value_ok"](content):
             problems.append(f"local.{lst}[{key}]: {content[:40]!r} is not an allowed target here")
         try:

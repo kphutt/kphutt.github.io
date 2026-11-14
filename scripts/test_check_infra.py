@@ -63,10 +63,21 @@ class IdentityRecordGuard(unittest.TestCase):
     def test_wildcard_is_refused_in_mail(self):
         self.assertFalse(guard(with_name('"txt-spf"', "*.kphutt.com"))[0])
 
-    def test_test_name_variants_are_refused_in_mail(self):
-        for name in ("NEXT.kphutt.com", "next.kphutt.com.", "a.Next.kphutt.com"):
-            with self.subTest(name=name):
-                self.assertFalse(guard(with_name('"txt-spf"', name))[0])
+    def test_non_canonical_spellings_stay_refused_in_mail_and_services(self):
+        # Refused by the zone check or the services pattern on the raw name, as before.
+        for line, name in (('"txt-spf"', "kphutt.com."), ('"txt-spf"', "next.kphutt.com."),
+                           ('"txt-spf"', "_dmarc.kphutt.com."), ('"lodestar"', "Lodestar.kphutt.com"),
+                           ('"lodestar"', "lodestar.kphutt.com."), ('"lodestar"', "lodestar.KPHUTT.com")):
+            with self.subTest(line=line, name=name):
+                self.assertFalse(guard(with_name(line, name))[0])
+
+    def test_handle_and_wildcard_have_their_own_message(self):
+        for line in ('"txt-spf"', '"lodestar"'):
+            ok, out = guard(with_name(line, "_ATPROTO.kphutt.com"))
+            self.assertFalse(ok)
+            self.assertIn("lives only in the identity list", out)
+            ok, out = guard(with_name(line, "*.kphutt.com"))
+            self.assertIn("no wildcard names", out)
 
     def test_changed_did_is_refused(self):
         self.assertFalse(guard(DNS.replace("25m67qcipzldd2mitkbaqth4", "other"))[0])
