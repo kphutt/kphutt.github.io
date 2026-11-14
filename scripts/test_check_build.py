@@ -361,6 +361,10 @@ class BannedWords(unittest.TestCase):
         self.assertEqual(self.found(index_html="<p>laws, Amazonbot, snowflakes</p>",
                                     robots_txt="User-agent: Amazonbot"), [])
 
+    def test_plain_amazon_fails_but_amazonbot_alone_passes(self):
+        self.assertTrue(self.found(index_html="<p>I worked at Amazon</p>"))
+        self.assertEqual(self.found(index_html="<p>Amazonbot</p>"), [])
+
     def test_the_real_home_page_source_is_clean(self):
         text = (cb.CONFIG.parent / "content" / "_index.md").read_text(encoding="utf-8")
         self.assertEqual(self.found(index_html=text), [])

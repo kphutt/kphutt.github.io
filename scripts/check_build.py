@@ -28,13 +28,13 @@ CONFIG = Path(__file__).resolve().parent.parent / "hugo.toml"
 
 TEXT_SUFFIXES = {".html", ".xml", ".txt", ".json", ".css", ".js"}
 
+# Company names the site must not print: the owner describes past work without them. Matched
+# as whole words, case-insensitively, in built .html pages and llms.txt only. Add a name here
+# to ban it.
+BANNED_WORDS = ("AWS", "Amazon", "Amazon Web Services", "Snowflake")
+
 # Files the build is expected to publish, each with why it matters. All of these come from
 # configuration rather than from a file in content/, so losing one is silent.
-# Company names the site must not print: the owner describes past work without them. Matched
-# as whole words, case-insensitively, in built .html pages and llms.txt only, so "Amazonbot"
-# in robots.txt is not a hit. Add a name here to ban it.
-BANNED_WORDS = ("AWS", "Amazon Web Services", "Snowflake")
-
 EXPECTED_FILES = {
     "robots.txt": "the crawler policy and the sitemap pointer would be gone",
     "llms.txt": "the plain-text index for language models would be gone",

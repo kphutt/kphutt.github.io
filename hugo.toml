@@ -57,7 +57,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   # them. They are only in <meta> tags: no page shows either in an <img>, and the build
   # check fails if one does.
   #
-  # images is the og:image, a wide 1200x630 card with the headshot in the middle, so
+  # images is the og:image, a wide 1200x630 card with the headshot on the left, so
   # LinkedIn and Facebook, which crop to a wide card, keep the whole head in frame.
   # twitterImage is the twitter:image, the square headshot, because the "summary" card
   # (set in layouts/partials/templates/twitter_cards.html) shows a square whole.
