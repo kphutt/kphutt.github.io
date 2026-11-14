@@ -192,16 +192,20 @@ class PreviewMeta(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root / "posts" / "x").mkdir(parents=True)
-            (root / "index.html").write_text(self.page(), encoding="utf-8")
+            (root / "images").mkdir()
+            (root / "images" / "kphutt.jpg").write_bytes(self.jpeg(1200, 1200))
+            (root / "index.html").write_text(self.size_page(1200, 1200), encoding="utf-8")
             (root / "404.html").write_text("<p>no og url here</p>", encoding="utf-8")
             (root / "posts" / "x" / "index.html").write_text(
-                self.page(card="summary_large_image"), encoding="utf-8")
+                self.size_page(1200, 1200, card="summary_large_image"), encoding="utf-8")
             found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier")
         self.assertEqual(len(found), 1, found)
         self.assertIn("posts/x/index.html", found[0])
 
     def test_no_checkable_page_fails(self):
         with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "images").mkdir()
+            (Path(d) / "images" / "kphutt.jpg").write_bytes(self.jpeg(1200, 1200))
             (Path(d) / "index.html").write_text("<p>x</p>", encoding="utf-8")
             self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE))
 
@@ -211,8 +215,13 @@ class PreviewMeta(unittest.TestCase):
         app = b"\xff\xe0\x00\x04\x00\x00"
         return b"\xff\xd8" + app + sof + b"\xff\xd9"
 
-    def size_page(self, width, height, mime="image/jpeg"):
-        return (self.page() + f'<meta property="og:image:type" content="{mime}">'
+    @staticmethod
+    def png(width, height):
+        ihdr = width.to_bytes(4, "big") + height.to_bytes(4, "big") + b"\x08\x02\x00\x00\x00"
+        return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0d" + b"IHDR" + ihdr + b"\x00\x00\x00\x00"
+
+    def size_page(self, width, height, mime="image/jpeg", **kw):
+        return (self.page(**kw) + f'<meta property="og:image:type" content="{mime}">'
                 f'<meta property="og:image:width" content="{width}">'
                 f'<meta property="og:image:height" content="{height}">')
 
@@ -233,13 +242,45 @@ class PreviewMeta(unittest.TestCase):
             for w, h, mime, bad in ((1200, 1200, "image/jpeg", False), (640, 1200, "image/jpeg", True),
                                     (1200, 640, "image/jpeg", True), (1200, 1200, "image/png", True)):
                 (root / "index.html").write_text(self.size_page(w, h, mime), encoding="utf-8")
-                found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier", True)
+                found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier")
                 self.assertEqual(bool(found), bad, (w, h, mime, found))
 
     def test_missing_image_file_fails_the_size_check(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "index.html").write_text(self.size_page(1200, 1200), encoding="utf-8")
-            self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE, "", True))
+            self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE, ""))
+
+    def check_image(self, w, h, mime, name="og-image.png", data=None):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / name).write_bytes(self.png(1200, 630) if data is None else data)
+            (root / "index.html").write_text(
+                self.size_page(w, h, mime).replace("images/kphutt.jpg", name), encoding="utf-8")
+            return cb.preview_meta_failures(root, name, self.BASE, "Karsten Huttelmaier")
+
+    def test_png_size_reads_the_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.png"
+            f.write_bytes(self.png(1200, 630))
+            self.assertEqual(cb.image_size(f), ("image/png", 1200, 630))
+
+    def test_png_with_matching_meta_passes(self):
+        self.assertEqual(self.check_image(1200, 630, "image/png"), [])
+
+    def test_png_with_stale_width_fails(self):
+        self.assertTrue(self.check_image(1200, 630, "image/png", data=self.png(1000, 630)))
+
+    def test_png_declared_as_jpeg_fails(self):
+        self.assertTrue(self.check_image(1200, 630, "image/jpeg"))
+
+    def test_png_with_the_old_jpeg_meta_fails(self):
+        # The reviewer's case: og-image.png (1200x630) with stale 1200x1200 image/jpeg meta.
+        self.assertTrue(self.check_image(1200, 1200, "image/jpeg"))
+
+    def test_unsupported_extension_fails_instead_of_skipping(self):
+        found = self.check_image(1200, 630, "image/webp", name="og-image.webp", data=b"RIFF")
+        self.assertTrue(found)
+        self.assertIn("use JPEG or PNG", found[0])
 
 
 class NoScriptNoFonts(unittest.TestCase):

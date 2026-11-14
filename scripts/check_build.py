@@ -694,6 +694,26 @@ def jpeg_size(path: Path) -> tuple:
     raise ValueError(f"{path.name} has no JPEG frame header")
 
 
+def png_size(path: Path) -> tuple:
+    """(width, height) in pixels of a PNG, read from its IHDR chunk with the stdlib only.
+    Raises ValueError if the file is not a PNG or has no header chunk."""
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR" or len(data) < 24:
+        raise ValueError(f"{path.name} is not a PNG")
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+def image_size(path: Path) -> tuple:
+    """(mime, width, height) of a JPEG or PNG file, chosen by extension.
+    Raises ValueError for any other format or an unreadable file."""
+    ext = path.suffix.lower()
+    if ext in (".jpg", ".jpeg"):
+        return ("image/jpeg", *jpeg_size(path))
+    if ext == ".png":
+        return ("image/png", *png_size(path))
+    raise ValueError(f"unsupported image format {ext or '(none)'!r}")
+
+
 def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=None) -> list:
     """Why one page's link-preview tags are wrong, as a list of messages (empty when right).
 
@@ -720,21 +740,19 @@ def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=
     return problems
 
 
-def preview_meta_failures(root: Path, image: str, base: str, alt: str = "",
-                          check_file: bool = False) -> list:
+def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> list:
     """preview_meta_problems over every built page that has an og:url (alias redirect pages
     carry none; the 404 page has one, so it is checked), each message prefixed with its path.
-    Fails if no page qualified, so the check cannot pass by finding nothing. With check_file,
-    og:image:type/width/height must also match the built image file's real format and size."""
+    Fails if no page qualified, so the check cannot pass by finding nothing. og:image:type/width/height
+    must also match the built image file's real format and size, for a JPEG or a PNG. Any
+    other or unreadable format fails rather than skipping the check."""
     found = []
-    real = None
-    if check_file:
-        file = root / image.lstrip("/")
-        try:
-            width, height = jpeg_size(file)
-        except (OSError, ValueError) as e:
-            return [f"cannot read the preview image {image} to check its size: {e}"]
-        real = {"type": "image/jpeg", "width": width, "height": height}
+    file = root / image.lstrip("/")
+    try:
+        mime, width, height = image_size(file)
+    except (OSError, ValueError) as e:
+        return [f"can't verify the preview image size for {image}; use JPEG or PNG ({e})"]
+    real = {"type": mime, "width": width, "height": height}
     seen = 0
     for page in sorted(root.rglob("*.html")):
         html = page.read_text(encoding="utf-8", errors="replace")
@@ -813,8 +831,7 @@ def main() -> int:
             # twitter:image tags, the small twitter card, and the alt text.
             params = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {})
             failures += preview_meta_failures(
-                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""),
-                check_file=schema["image"].lower().endswith((".jpg", ".jpeg")))
+                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""))
         else:
             failures.append("params.schema.image is not set")
 
