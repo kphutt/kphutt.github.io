@@ -53,10 +53,20 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   disableThemeToggle = true
   disableScrollToTop = true
 
-  # The social preview card, used for og:image and twitter:image on every page. Without it
-  # link previews show a bare URL, and the theme falls back to the small "summary" twitter
-  # card instead of the large one. Regenerate with scripts/make_og_image.py.
-  images = ["og-image.png"]
+  # The social preview image, used for og:image and twitter:image on every page: the
+  # headshot, a path under static/. Link previews (Slack, LinkedIn, iMessage, Discord, X)
+  # show it. It is only in <meta> tags: no page shows it in an <img>, and the build check
+  # fails if one does. The image is square, so layouts/partials/templates/twitter_cards.html
+  # makes the twitter card "summary" rather than the theme's large one.
+  images = ["images/kphutt.jpg"]
+
+  # Extra og:image tags, read by layouts/partials/templates/opengraph.html. width and height
+  # are the file's real size in pixels.
+  [params.imageMeta]
+    type = "image/jpeg"
+    width = 1200
+    height = 1200
+    alt = "Karsten Huttelmaier"
 
 [params.label]
   text = "kphutt.com"
@@ -95,7 +105,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   publisherType = "Person"
   alternateName = "kphutt"
   # The Person's picture for search engines, a path under static/. It goes in the Person
-  # record only: no page shows it, and it is not the og:image.
+  # record and the link-preview tags (params.images): no page shows it.
   image = "images/kphutt.jpg"
   knowsAbout = ["Service identity", "PKI", "OAuth", "OpenID Connect"]
   sameAs = [

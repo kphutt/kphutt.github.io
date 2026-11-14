@@ -1,0 +1,50 @@
+{{- /*
+  A copy of the theme's layouts/_partials/templates/twitter_cards.html with one change: a
+  card built from params.images is "summary", not "summary_large_image". The site's image is
+  a square headshot, and the large card crops a square badly. The summary card shows it
+  whole, beside the title. The image's alt text, from params.imageMeta, is added as
+  twitter:image:alt.
+
+  scripts/check_build.py pins the theme file this was copied from. When a theme update
+  changes it, the build fails until this copy is re-synced.
+*/ -}}
+{{- if .Params.cover.image -}}
+<meta name="twitter:card" content="summary_large_image">
+{{- if (ne $.Params.cover.relative true) }}
+<meta name="twitter:image" content="{{ .Params.cover.image | absURL }}">
+{{- else }}
+<meta name="twitter:image" content="{{ (path.Join .RelPermalink .Params.cover.image ) | absURL }}">
+{{- end}}
+{{- else }}
+{{- $images := partial "templates/_funcs/get-page-images" . }}
+{{- with index $images 0 }}
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:image" content="{{ .Permalink }}">
+  {{- with site.Params.imageMeta }}{{ with .alt }}
+  <meta name="twitter:image:alt" content="{{ . }}">
+  {{- end }}{{ end }}
+{{- else }}
+  <meta name="twitter:card" content="summary">
+{{- end }}
+{{- end }}
+
+{{- with or .Title site.Title site.Params.title | plainify }}
+  <meta name="twitter:title" content="{{ . }}">
+{{- end }}
+
+{{- with or .Description .Summary site.Params.description | plainify | htmlUnescape }}
+  <meta name="twitter:description" content="{{ trim . "\n\r\t " }}">
+{{- end }}
+
+{{- $twitterSite := "" }}
+{{- with site.Params.social }}
+  {{- if reflect.IsMap . }}
+    {{- with .twitter }}
+      {{- $content := . }}
+      {{- if not (strings.HasPrefix . "@") }}
+        {{- $content = printf "@%v" . }}
+      {{- end }}
+      <meta name="twitter:site" content="{{ $content }}">
+    {{- end }}
+  {{- end }}
+{{- end }}

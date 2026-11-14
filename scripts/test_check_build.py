@@ -140,6 +140,149 @@ class PersonImage(unittest.TestCase):
         self.assertIn("posts/x/index.html", found[0])
 
 
+class PreviewMeta(unittest.TestCase):
+    BASE = "https://kphutt.com"
+    IMG = "images/kphutt.jpg"
+    URL = "https://kphutt.com/images/kphutt.jpg"
+
+    def page(self, og=URL, tw=URL, card="summary", alt="Karsten Huttelmaier", quoted=True):
+        q = '"' if quoted else ""
+        parts = [f"<meta property={q}og:url{q} content={q}https://kphutt.com/{q}>"]
+        if og is not None:
+            parts.append(f"<meta property={q}og:image{q} content={q}{og}{q}>")
+        if alt is not None:
+            # A value with a space is always quoted, even in minified output.
+            parts.append(f'<meta property={q}og:image:alt{q} content="{alt}">')
+        if card is not None:
+            parts.append(f"<meta name={q}twitter:card{q} content={q}{card}{q}>")
+        if tw is not None:
+            parts.append(f"<meta name={q}twitter:image{q} content={q}{tw}{q}>")
+        return "".join(parts)
+
+    def problems(self, html, alt="Karsten Huttelmaier"):
+        return cb.preview_meta_problems(html, self.IMG, self.BASE, alt)
+
+    def test_config_sets_the_image(self):
+        import tomllib
+        cfg = tomllib.loads(cb.CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual(cfg["params"]["images"], [self.IMG])
+        self.assertEqual(cfg["params"]["imageMeta"]["alt"], "Karsten Huttelmaier")
+
+    def test_correct_page_passes(self):
+        self.assertEqual(self.problems(self.page()), [])
+        self.assertEqual(self.problems(self.page(quoted=False)), [])
+
+    def test_missing_or_wrong_tags_fail(self):
+        for kw in ({"og": None}, {"tw": None}, {"card": None}, {"alt": None},
+                   {"og": "https://kphutt.com/og-image.png"},
+                   {"tw": "/images/kphutt.jpg"},
+                   {"og": "http://kphutt.com/images/kphutt.jpg"},
+                   {"card": "summary_large_image"},
+                   {"alt": "someone else"}):
+            self.assertTrue(self.problems(self.page(**kw)), kw)
+
+    def test_duplicate_image_fails(self):
+        html = self.page() + f'<meta property="og:image" content="{self.URL}">'
+        self.assertTrue(self.problems(html))
+
+    def test_alt_is_not_required_when_not_configured(self):
+        self.assertEqual(self.problems(self.page(alt=None), alt=""), [])
+
+    def test_every_page_with_og_url_is_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "posts" / "x").mkdir(parents=True)
+            (root / "images").mkdir()
+            (root / "images" / "kphutt.jpg").write_bytes(self.jpeg(1200, 1200))
+            (root / "index.html").write_text(self.size_page(1200, 1200), encoding="utf-8")
+            (root / "404.html").write_text("<p>no og url here</p>", encoding="utf-8")
+            (root / "posts" / "x" / "index.html").write_text(
+                self.size_page(1200, 1200, card="summary_large_image"), encoding="utf-8")
+            found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier")
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("posts/x/index.html", found[0])
+
+    def test_no_checkable_page_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "images").mkdir()
+            (Path(d) / "images" / "kphutt.jpg").write_bytes(self.jpeg(1200, 1200))
+            (Path(d) / "index.html").write_text("<p>x</p>", encoding="utf-8")
+            self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE))
+
+    @staticmethod
+    def jpeg(width, height):
+        sof = b"\xff\xc0\x00\x0b\x08" + height.to_bytes(2, "big") + width.to_bytes(2, "big") + b"\x01\x01\x11\x00"
+        app = b"\xff\xe0\x00\x04\x00\x00"
+        return b"\xff\xd8" + app + sof + b"\xff\xd9"
+
+    @staticmethod
+    def png(width, height):
+        ihdr = width.to_bytes(4, "big") + height.to_bytes(4, "big") + b"\x08\x02\x00\x00\x00"
+        return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0d" + b"IHDR" + ihdr + b"\x00\x00\x00\x00"
+
+    def size_page(self, width, height, mime="image/jpeg", **kw):
+        return (self.page(**kw) + f'<meta property="og:image:type" content="{mime}">'
+                f'<meta property="og:image:width" content="{width}">'
+                f'<meta property="og:image:height" content="{height}">')
+
+    def test_jpeg_size_reads_the_frame_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.jpg"
+            f.write_bytes(self.jpeg(640, 480))
+            self.assertEqual(cb.jpeg_size(f), (640, 480))
+            f.write_bytes(b"not a jpeg")
+            with self.assertRaises(ValueError):
+                cb.jpeg_size(f)
+
+    def test_preview_size_must_match_the_real_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "images").mkdir()
+            (root / "images" / "kphutt.jpg").write_bytes(self.jpeg(1200, 1200))
+            for w, h, mime, bad in ((1200, 1200, "image/jpeg", False), (640, 1200, "image/jpeg", True),
+                                    (1200, 640, "image/jpeg", True), (1200, 1200, "image/png", True)):
+                (root / "index.html").write_text(self.size_page(w, h, mime), encoding="utf-8")
+                found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier")
+                self.assertEqual(bool(found), bad, (w, h, mime, found))
+
+    def test_missing_image_file_fails_the_size_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "index.html").write_text(self.size_page(1200, 1200), encoding="utf-8")
+            self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE, ""))
+
+    def check_image(self, w, h, mime, name="og-image.png", data=None):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / name).write_bytes(self.png(1200, 630) if data is None else data)
+            (root / "index.html").write_text(
+                self.size_page(w, h, mime).replace("images/kphutt.jpg", name), encoding="utf-8")
+            return cb.preview_meta_failures(root, name, self.BASE, "Karsten Huttelmaier")
+
+    def test_png_size_reads_the_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.png"
+            f.write_bytes(self.png(1200, 630))
+            self.assertEqual(cb.image_size(f), ("image/png", 1200, 630))
+
+    def test_png_with_matching_meta_passes(self):
+        self.assertEqual(self.check_image(1200, 630, "image/png"), [])
+
+    def test_png_with_stale_width_fails(self):
+        self.assertTrue(self.check_image(1200, 630, "image/png", data=self.png(1000, 630)))
+
+    def test_png_declared_as_jpeg_fails(self):
+        self.assertTrue(self.check_image(1200, 630, "image/jpeg"))
+
+    def test_png_with_the_old_jpeg_meta_fails(self):
+        # The reviewer's case: og-image.png (1200x630) with stale 1200x1200 image/jpeg meta.
+        self.assertTrue(self.check_image(1200, 1200, "image/jpeg"))
+
+    def test_unsupported_extension_fails_instead_of_skipping(self):
+        found = self.check_image(1200, 630, "image/webp", name="og-image.webp", data=b"RIFF")
+        self.assertTrue(found)
+        self.assertIn("use JPEG or PNG", found[0])
+
+
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""
 

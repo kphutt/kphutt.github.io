@@ -35,10 +35,10 @@ EXPECTED_FILES = {
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
-    # Referenced only from og:image and twitter:image, which are content= attributes, so
-    # the internal-reference check below cannot see it. Losing it means every link preview
-    # silently falls back to a bare URL.
-    "og-image.png": "link previews would lose their image",
+    # Referenced only from each post's BlogPosting JSON-LD image, which is a string in a
+    # script block, so the internal-reference check below cannot see it. Losing it silently
+    # drops that image.
+    "og-image.png": "the posts' BlogPosting structured data would point at a missing image",
     # Nothing links it. IndexNow engines fetch it to check the key scripts/indexnow.py sends.
     "indexnow.txt": "IndexNow engines would reject every submission",
     # Linked from extend_head.html, so the reference check does cover it -- but it is
@@ -112,6 +112,8 @@ OVERRIDDEN_THEME_FILES = {
     "_partials/head.html": "c7ef58590d6e4c755f1d2a575668095f3539475c61b39fdc12fd6e30025d30b0",
     "_partials/footer.html": "94921247defd67d205aaa2358d96365664e75de4a30d44b0ed36c6635c738543",
     "_partials/templates/schema_json.html": "3fd05ccc156d8eda928c923776b53044097600c9c31a4812e3ebcfe9196b2ffa",
+    "_partials/templates/opengraph.html": "49e92e8239e5e050920a05ebf97578652b5647b17ec8b3c7f10362bef291ffea",
+    "_partials/templates/twitter_cards.html": "329cc121fc4f838d5f36d3efd797200e94231b612278f5d97c346a8546a87811",
 }
 
 
@@ -649,6 +651,121 @@ def headshot_img_problems(html: str, image: str) -> list:
     return problems
 
 
+class _MetaFinder(HTMLParser):
+    """Every <meta> tag as a (name-or-property, content) pair. A real parser, so Hugo's
+    minified unquoted attributes and the quoted ones read the same."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.metas = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            d = dict(attrs)
+            key = d.get("property") or d.get("name")
+            if key:
+                self.metas.append((key, d.get("content")))
+
+
+def jpeg_size(path: Path) -> tuple:
+    """(width, height) in pixels of a JPEG, read from its SOF marker with the stdlib only.
+    Raises ValueError if the file is not a JPEG or has no frame header."""
+    data = path.read_bytes()
+    if data[:2] != b"\xff\xd8":
+        raise ValueError(f"{path.name} is not a JPEG")
+    i = 2
+    while i + 4 <= len(data):
+        if data[i] != 0xFF:
+            raise ValueError(f"{path.name}: bad JPEG marker at byte {i}")
+        marker = data[i + 1]
+        if marker == 0xFF:  # fill byte
+            i += 1
+            continue
+        if marker in (0x01, *range(0xD0, 0xD8)):  # standalone markers, no length
+            i += 2
+            continue
+        length = int.from_bytes(data[i + 2:i + 4], "big")
+        # SOF0..SOF15 carry the frame size, except DHT (C4), JPG (C8) and DAC (CC).
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height = int.from_bytes(data[i + 5:i + 7], "big")
+            width = int.from_bytes(data[i + 7:i + 9], "big")
+            return width, height
+        i += 2 + length
+    raise ValueError(f"{path.name} has no JPEG frame header")
+
+
+def png_size(path: Path) -> tuple:
+    """(width, height) in pixels of a PNG, read from its IHDR chunk with the stdlib only.
+    Raises ValueError if the file is not a PNG or has no header chunk."""
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR" or len(data) < 24:
+        raise ValueError(f"{path.name} is not a PNG")
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+def image_size(path: Path) -> tuple:
+    """(mime, width, height) of a JPEG or PNG file, chosen by extension.
+    Raises ValueError for any other format or an unreadable file."""
+    ext = path.suffix.lower()
+    if ext in (".jpg", ".jpeg"):
+        return ("image/jpeg", *jpeg_size(path))
+    if ext == ".png":
+        return ("image/png", *png_size(path))
+    raise ValueError(f"unsupported image format {ext or '(none)'!r}")
+
+
+def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=None) -> list:
+    """Why one page's link-preview tags are wrong, as a list of messages (empty when right).
+
+    og:image and twitter:image must each appear once and be the headshot's absolute URL, and
+    twitter:card must be "summary" (the image is square, and the large card crops it badly).
+    When alt is given, og:image:alt must carry it. When real is given, as a dict with the
+    image file's actual "type", "width" and "height", og:image:type/width/height must match it.
+    """
+    want = f"{base.rstrip('/')}/{image.lstrip('/')}"
+    finder = _MetaFinder()
+    finder.feed(html)
+    finder.close()
+    problems = []
+    checks = [("og:image", want), ("twitter:image", want), ("twitter:card", "summary")]
+    if alt:
+        checks.append(("og:image:alt", alt))
+    if real:
+        checks += [("og:image:type", real["type"]), ("og:image:width", str(real["width"])),
+                   ("og:image:height", str(real["height"]))]
+    for key, expected in checks:
+        values = [v for k, v in finder.metas if k == key]
+        if values != [expected]:
+            problems.append(f"{key} is {values!r}, expected [{expected!r}]")
+    return problems
+
+
+def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> list:
+    """preview_meta_problems over every built page that has an og:url (alias redirect pages
+    carry none; the 404 page has one, so it is checked), each message prefixed with its path.
+    Fails if no page qualified, so the check cannot pass by finding nothing. og:image:type/width/height
+    must also match the built image file's real format and size, for a JPEG or a PNG. Any
+    other or unreadable format fails rather than skipping the check."""
+    found = []
+    file = root / image.lstrip("/")
+    try:
+        mime, width, height = image_size(file)
+    except (OSError, ValueError) as e:
+        return [f"can't verify the preview image size for {image}; use JPEG or PNG ({e})"]
+    real = {"type": mime, "width": width, "height": height}
+    seen = 0
+    for page in sorted(root.rglob("*.html")):
+        html = page.read_text(encoding="utf-8", errors="replace")
+        if not re.search(r"<meta property=[\"']?og:url\b", html):
+            continue
+        seen += 1
+        rel = page.relative_to(root).as_posix()
+        found += [f"{rel}: {m}" for m in preview_meta_problems(html, image, base, alt, real)]
+    if not seen:
+        found.append("no built page has og:url, so the link-preview tags were not checked")
+    return found
+
+
 def headshot_img_failures(root: Path, image: str) -> list:
     """headshot_img_problems over every built .html page, each message prefixed with its path."""
     found = []
@@ -710,6 +827,11 @@ def main() -> int:
         if schema.get("image"):
             failures += [f"homepage: {m}" for m in person_image_problems(html, root, schema["image"], base)]
             failures += headshot_img_failures(root, schema["image"])
+            # 2d. Every page's link preview shows the same headshot: the og:image and
+            # twitter:image tags, the small twitter card, and the alt text.
+            params = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {})
+            failures += preview_meta_failures(
+                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""))
         else:
             failures.append("params.schema.image is not set")
 
