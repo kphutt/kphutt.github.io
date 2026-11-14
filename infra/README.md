@@ -322,7 +322,8 @@ The guards:
   - mail: MX and TXT
   - services: CNAMEs to `ghs.googlehosted.com`, one label under the zone
   - identity: exactly one TXT record, with the exact name `_atproto.kphutt.com` and the exact
-    DID value. No other underscore name and no wildcard name is allowed in any list.
+    DID value. That name is kept out of every other list, compared without regard to case or a
+    trailing dot, and no wildcard name is allowed in any list.
 
   Only `dns.tf` may import a Cloudflare record, and no other file may use any of the lists.
   The test name and anything under it are refused here, and every other file is still

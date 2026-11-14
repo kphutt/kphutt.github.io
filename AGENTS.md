@@ -80,9 +80,10 @@ locally and exist nowhere in CI.
   in its file, then plan and apply (`infra/README.md`). A record changed in the Cloudflare
   dashboard is put back by the next plan and apply.
 - `_atproto.kphutt.com` is the Bluesky handle record: one TXT record holding the DID of the
-  account that uses `kphutt.com` as its handle. `scripts/check_infra.py` pins its exact name
-  and value, and allows no other underscore name and no wildcard. Changing the DID changes
-  which account the handle verifies to, so treat it as a reviewed change.
+  account that uses `kphutt.com` as its handle. `scripts/check_infra.py` pins the record's exact
+  name and value, keeps that name out of every other list, and allows no wildcard name.
+  Changing the DID changes which account the handle verifies to, so treat it as a reviewed
+  change.
 - Alerts, not dashboards: an uptime check and a certificate-expiry check email when the site
   is down or a certificate is running out (`infra/uptime.tf`). A billing budget takes the site
   offline once Google reports spending past a limit (`infra/cost-cutoff/`). Google reports

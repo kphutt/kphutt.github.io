@@ -388,9 +388,13 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if rid == "null" and not rule["new_records"]:
             problems.append(f"local.{lst}[{key}]: id is null, but every record in this list must "
                             "exist and be adopted")
-        if not (rname == ZONE or rname.endswith("." + ZONE)):
+        # DNS names are case-insensitive and may end in a dot, so every refusal compares the
+        # normalized name. A rule that pins exact names ("names") compares the literal text,
+        # so a variant spelling of an allowed name is refused too.
+        norm = rname.lower().rstrip(".")
+        if not (norm == ZONE or norm.endswith("." + ZONE)):
             problems.append(f"local.{lst}[{key}]: {rname} is not in the {ZONE} zone")
-        if rname == TEST_NAME or rname.endswith("." + TEST_NAME):
+        if norm == TEST_NAME or norm.endswith("." + TEST_NAME):
             problems.append(f"local.{lst}[{key}]: {rname} belongs to test-domain.tf, not here")
         if rtype not in rule["types"]:
             problems.append(f"local.{lst}[{key}]: a {rtype} record does not belong in this list "
@@ -398,7 +402,7 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if rule["names"] is not None and rname not in rule["names"]:
             problems.append(f"local.{lst}[{key}]: {rname} does not belong in this list "
                             f"(only {sorted(rule['names'])})")
-        if "name_ok" in rule and not rule["name_ok"](rname):
+        if "name_ok" in rule and not rule["name_ok"](norm):
             problems.append(f"local.{lst}[{key}]: {rname} is not allowed here (one label under "
                             f"{ZONE}, never the apex, www or the test name)")
         if "value_ok" in rule and not rule["value_ok"](content):
