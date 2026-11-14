@@ -1,9 +1,9 @@
 {{- /*
   A copy of the theme's layouts/_partials/templates/twitter_cards.html with one change: a
-  card built from params.images is "summary", not "summary_large_image". The site's image is
-  a square headshot, and the large card crops a square badly. The summary card shows it
-  whole, beside the title. The image's alt text, from params.imageMeta, is added as
-  twitter:image:alt.
+  card built from a site image is "summary", not "summary_large_image". The twitter:image is
+  params.twitterImage, the square headshot (the og:image is the wide card from params.images),
+  and the large card crops a square badly. The summary card shows it whole, beside the title.
+  The image's alt text, from params.imageMeta, is added as twitter:image:alt.
 
   scripts/check_build.py pins the theme file this was copied from. When a theme update
   changes it, the build fails until this copy is re-synced.
@@ -16,10 +16,9 @@
 <meta name="twitter:image" content="{{ (path.Join .RelPermalink .Params.cover.image ) | absURL }}">
 {{- end}}
 {{- else }}
-{{- $images := partial "templates/_funcs/get-page-images" . }}
-{{- with index $images 0 }}
+{{- with site.Params.twitterImage }}
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:image" content="{{ .Permalink }}">
+  <meta name="twitter:image" content="{{ . | absURL }}">
   {{- with site.Params.imageMeta }}{{ with .alt }}
   <meta name="twitter:image:alt" content="{{ . }}">
   {{- end }}{{ end }}

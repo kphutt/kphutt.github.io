@@ -714,25 +714,32 @@ def image_size(path: Path) -> tuple:
     raise ValueError(f"unsupported image format {ext or '(none)'!r}")
 
 
-def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=None) -> list:
+def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=None,
+                          twitter_image: str = "", og_type: str = "") -> list:
     """Why one page's link-preview tags are wrong, as a list of messages (empty when right).
 
-    og:image and twitter:image must each appear once and be the headshot's absolute URL, and
-    twitter:card must be "summary" (the image is square, and the large card crops it badly).
-    When alt is given, og:image:alt must carry it. When real is given, as a dict with the
-    image file's actual "type", "width" and "height", og:image:type/width/height must match it.
+    og:image must appear once and be image's absolute URL (the wide card); twitter:image must
+    appear once and be twitter_image's (the square headshot; image when not given); and
+    twitter:card must be "summary" (the twitter image is square, and the large card crops it
+    badly). When alt is given, og:image:alt must carry it. When real is given, as a dict with
+    the og image file's actual "type", "width" and "height", og:image:type/width/height must
+    match it. When og_type is given, og:type must be exactly that.
     """
-    want = f"{base.rstrip('/')}/{image.lstrip('/')}"
+    def absolute(path):
+        return f"{base.rstrip('/')}/{path.lstrip('/')}"
     finder = _MetaFinder()
     finder.feed(html)
     finder.close()
     problems = []
-    checks = [("og:image", want), ("twitter:image", want), ("twitter:card", "summary")]
+    checks = [("og:image", absolute(image)), ("twitter:image", absolute(twitter_image or image)),
+              ("twitter:card", "summary")]
     if alt:
         checks.append(("og:image:alt", alt))
     if real:
         checks += [("og:image:type", real["type"]), ("og:image:width", str(real["width"])),
                    ("og:image:height", str(real["height"]))]
+    if og_type:
+        checks.append(("og:type", og_type))
     for key, expected in checks:
         values = [v for k, v in finder.metas if k == key]
         if values != [expected]:
@@ -740,12 +747,21 @@ def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=
     return problems
 
 
-def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> list:
+def expected_og_type(rel: str) -> str:
+    """og:type a built page must carry: "article" for a post (posts/<slug>/index.html),
+    "website" for the home page and every list or other page."""
+    parts = rel.split("/")
+    return "article" if len(parts) == 3 and parts[0] == "posts" and parts[2] == "index.html" else "website"
+
+
+def preview_meta_failures(root: Path, image: str, base: str, alt: str = "",
+                          twitter_image: str = "") -> list:
     """preview_meta_problems over every built page that has an og:url (alias redirect pages
     carry none; the 404 page has one, so it is checked), each message prefixed with its path.
     Fails if no page qualified, so the check cannot pass by finding nothing. og:image:type/width/height
-    must also match the built image file's real format and size, for a JPEG or a PNG. Any
-    other or unreadable format fails rather than skipping the check."""
+    must also match the built og image file's real format and size, for a JPEG or a PNG. Any
+    other or unreadable format fails rather than skipping the check. og:type must be "article"
+    on a post and "website" everywhere else, the home page included."""
     found = []
     file = root / image.lstrip("/")
     try:
@@ -760,7 +776,8 @@ def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> l
             continue
         seen += 1
         rel = page.relative_to(root).as_posix()
-        found += [f"{rel}: {m}" for m in preview_meta_problems(html, image, base, alt, real)]
+        found += [f"{rel}: {m}" for m in preview_meta_problems(
+            html, image, base, alt, real, twitter_image, expected_og_type(rel))]
     if not seen:
         found.append("no built page has og:url, so the link-preview tags were not checked")
     return found
@@ -826,12 +843,19 @@ def main() -> int:
         schema = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {}).get("schema", {})
         if schema.get("image"):
             failures += [f"homepage: {m}" for m in person_image_problems(html, root, schema["image"], base)]
-            failures += headshot_img_failures(root, schema["image"])
-            # 2d. Every page's link preview shows the same headshot: the og:image and
-            # twitter:image tags, the small twitter card, and the alt text.
+            # 2d. Every page's link preview: the wide og:image (params.images) with its real
+            # size, the square twitter:image (params.twitterImage), the small twitter card,
+            # the alt text, and og:type. No page shows either image in an <img>.
             params = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {})
-            failures += preview_meta_failures(
-                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""))
+            og_image = (params.get("images") or [""])[0]
+            tw_image = params.get("twitterImage", "")
+            if not og_image or not tw_image:
+                failures.append("params.images and params.twitterImage must both be set")
+            else:
+                for img in dict.fromkeys([schema["image"], og_image, tw_image]):
+                    failures += headshot_img_failures(root, img)
+                failures += preview_meta_failures(
+                    root, og_image, base, params.get("imageMeta", {}).get("alt", ""), tw_image)
         else:
             failures.append("params.schema.image is not set")
 
