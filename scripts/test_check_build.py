@@ -74,6 +74,72 @@ class RelMeConfig(unittest.TestCase):
         self.assertEqual(len(cb.rel_me_problems(html, self.profiles)), len(self.schema["sameAs"]))
 
 
+class PersonImage(unittest.TestCase):
+    BASE = "https://kphutt.com"
+    IMG = "images/kphutt.jpg"
+    URL = "https://kphutt.com/images/kphutt.jpg"
+
+    def page(self, image=URL, body=""):
+        import json
+        node = {"@type": "Person", "name": "A"}
+        if image is not None:
+            node["image"] = image
+        ld = json.dumps({"@context": "https://schema.org", "@graph": [node]})
+        return f'<script type="application/ld+json">{ld}</script>{body}'
+
+    def problems(self, html, exists=True):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            if exists:
+                (root / "images").mkdir()
+                (root / self.IMG).write_bytes(b"x")
+            return cb.person_image_problems(html, root, self.IMG, self.BASE)
+
+    def test_config_sets_the_image(self):
+        import tomllib
+        cfg = tomllib.loads(cb.CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual(cfg["params"]["schema"]["image"], self.IMG)
+
+    def test_correct_page_passes(self):
+        self.assertEqual(self.problems(self.page()), [])
+
+    def test_missing_image_fails(self):
+        self.assertTrue(self.problems(self.page(image=None)))
+
+    def test_relative_image_fails(self):
+        self.assertTrue(self.problems(self.page(image="/images/kphutt.jpg")))
+
+    def test_missing_file_fails(self):
+        self.assertTrue(self.problems(self.page(), exists=False))
+
+    def test_visible_img_fails(self):
+        for body in (f'<img src="{self.URL}">', "<img src=/images/kphutt.jpg>",
+                     '<img src="../images/kphutt.jpg">',
+                     '<img src="/x.png" srcset="/a.png 1x, /images/kphutt.jpg 2x">'):
+            self.assertTrue(cb.headshot_img_problems(body, self.IMG), body)
+
+    def test_gt_in_alt_cannot_hide_img(self):
+        body = '<img alt="a > b" src=/images/kphutt.jpg>'
+        self.assertTrue(cb.headshot_img_problems(body, self.IMG), body)
+        pic = '<picture><source srcset="/images/kphutt.jpg"><img src="/x.png"></picture>'
+        self.assertTrue(cb.headshot_img_problems(pic, self.IMG), pic)
+
+    def test_other_img_passes(self):
+        self.assertEqual(cb.headshot_img_problems('<img src="/x.png">', self.IMG), [])
+        self.assertEqual(cb.headshot_img_problems('<img src="/old-images/kphutt.jpg">', self.IMG), [])
+
+    def test_img_on_a_non_home_page_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "posts" / "x").mkdir(parents=True)
+            (root / "index.html").write_text("<p>home</p>", encoding="utf-8")
+            (root / "posts" / "x" / "index.html").write_text(
+                '<img src="/images/kphutt.jpg">', encoding="utf-8")
+            found = cb.headshot_img_failures(root, self.IMG)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("posts/x/index.html", found[0])
+
+
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""
 

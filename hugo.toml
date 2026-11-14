@@ -94,6 +94,9 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 [params.schema]
   publisherType = "Person"
   alternateName = "kphutt"
+  # The Person's picture for search engines, a path under static/. It goes in the Person
+  # record only: no page shows it, and it is not the og:image.
+  image = "images/kphutt.jpg"
   knowsAbout = ["Service identity", "PKI", "OAuth", "OpenID Connect"]
   sameAs = [
     "https://github.com/kphutt",

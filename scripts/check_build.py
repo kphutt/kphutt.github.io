@@ -18,6 +18,7 @@ import json
 import re
 import sys
 import tomllib
+from html.parser import HTMLParser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -580,6 +581,84 @@ def rel_me_problems(html: str, same_as: list) -> list:
     return [f"no <link rel=\"me\"> for {url}" for url in same_as if url not in found]
 
 
+def person_image_problems(html: str, root: Path, image: str, base: str) -> list:
+    """Why the homepage's Person image is wrong, as a list of messages (empty when right).
+
+    params.schema.image is a path under static/. The homepage's Person JSON-LD must carry it
+    as an absolute URL and the file must be in the build. That no <img> shows it is checked
+    on every page by headshot_img_problems.
+    """
+    want = f"{base.rstrip('/')}/{image.lstrip('/')}"
+    problems = []
+    found = None
+    for block in re.findall(r'<script\b[^>]*ld\+json[^>]*>(.*?)</script>', html, re.I | re.S):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        for node in data.get("@graph", [data]) if isinstance(data, dict) else data:
+            if isinstance(node, dict) and node.get("@type") == "Person":
+                found = node
+    if found is None:
+        problems.append("homepage has no Person JSON-LD")
+    elif found.get("image") != want:
+        problems.append(f"Person image is {found.get('image')!r}, expected {want!r}")
+    if not (root / image.lstrip("/")).is_file():
+        problems.append(f"{image} missing from build output")
+    return problems
+
+
+class _ImageTagFinder(HTMLParser):
+    """Every <img> and <source> with its attributes. A real parser, so a > inside a quoted
+    attribute value cannot end the tag early and hide a src."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("img", "source"):
+            self.tags.append((tag, attrs))
+
+    @staticmethod
+    def raw(tag, attrs):
+        return "<%s %s>" % (tag, " ".join(f'{n}="{v}"' for n, v in attrs))
+
+
+def headshot_img_problems(html: str, image: str) -> list:
+    """<img> tags in one page that show the headshot, by path (src or srcset, any host).
+
+    The owner wants the headshot in the structured data only, so no page may show it.
+    """
+    want = image.lstrip("/")
+    finder = _ImageTagFinder()
+    finder.feed(html)
+    finder.close()
+    problems = []
+    for tag, attrs in finder.tags:
+        urls = []
+        for name, value in attrs:
+            if name not in ("src", "srcset") or not value:
+                continue
+            for cand in value.split(","):
+                parts = cand.split()
+                if parts:
+                    urls.append(re.split(r"[?#]", parts[0], maxsplit=1)[0])
+        if any(u == want or u.endswith("/" + want) for u in urls):
+            problems.append(f"an <{tag}> shows the Person image: {finder.raw(tag, attrs)}")
+    return problems
+
+
+def headshot_img_failures(root: Path, image: str) -> list:
+    """headshot_img_problems over every built .html page, each message prefixed with its path."""
+    found = []
+    for page in sorted(root.rglob("*.html")):
+        html = page.read_text(encoding="utf-8", errors="replace")
+        rel = page.relative_to(root).as_posix()
+        found += [f"{rel}: {m}" for m in headshot_img_problems(html, image)]
+    return found
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "public")
     if not root.is_dir():
@@ -624,6 +703,15 @@ def main() -> int:
     if index.is_file():
         profiles = rel_me_profiles(tomllib.loads(CONFIG.read_text(encoding="utf-8")))
         failures += [f"homepage: {p}" for p in rel_me_problems(html, profiles)]
+
+    # 2c. The Person JSON-LD carries the headshot, and nothing visible shows it.
+    if index.is_file():
+        schema = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {}).get("schema", {})
+        if schema.get("image"):
+            failures += [f"homepage: {m}" for m in person_image_problems(html, root, schema["image"], base)]
+            failures += headshot_img_failures(root, schema["image"])
+        else:
+            failures.append("params.schema.image is not set")
 
     # 3. Files the site is supposed to publish must actually be published.
     #

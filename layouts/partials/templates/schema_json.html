@@ -34,6 +34,7 @@
   "mainEntityOfPage" (dict "@id" $home)
 -}}
 {{- with site.Params.schema.alternateName }}{{ $person = merge $person (dict "alternateName" .) }}{{ end -}}
+{{- with site.Params.schema.image }}{{ $person = merge $person (dict "image" (. | absURL)) }}{{ end -}}
 {{- with site.Params.schema.knowsAbout }}{{ $person = merge $person (dict "knowsAbout" .) }}{{ end -}}
 {{- with site.Params.schema.sameAs }}{{ $person = merge $person (dict "sameAs" .) }}{{ end -}}
 {{- $website := dict
