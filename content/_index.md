@@ -39,7 +39,7 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 
 | Project | What it is |
 |---|---|
-| [Explorables](https://explorables.kphutt.com/) | My first interactive explainer: a backup-power storm test you can play with |
+| [Explorables](https://explorables.kphutt.com/) | Interactive explainers you can play with, starting with a backup-power storm test |
 | [gdmutant](https://github.com/kphutt/gdmutant) | Mutation testing for GDScript and Godot: find the bugs your green tests would miss |
 | [Prompt Lenses](https://github.com/kphutt/prompt-lenses) | Review any document or code from a specific cognitive perspective |
 | [Inbox Shepherd](https://github.com/kphutt/inbox-shepherd) | Tame a noisy inbox by classifying email the way you would if you had time |
