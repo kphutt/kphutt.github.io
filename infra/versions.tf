@@ -10,7 +10,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 8.9.0"
+      version = "~> 8.10.0"
     }
     # google_billing_budget is only in the beta provider.
     google-beta = {
