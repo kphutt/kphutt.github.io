@@ -15,7 +15,7 @@ terraform {
     # google_billing_budget is only in the beta provider.
     google-beta = {
       source  = "hashicorp/google-beta"
-      version = "~> 8.9.0"
+      version = "~> 8.10.0"
     }
     # Zips the cost cutoff function's source (cost-cutoff.tf). Local only; no account.
     archive = {
