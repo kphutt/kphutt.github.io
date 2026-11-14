@@ -6,7 +6,7 @@
 # full, so any change to a record is a line in this file and a diff in review. tests/dns.tftest.hcl repeats the values, so a change has
 # to be made in both places, on purpose.
 #
-# Three resources, each with its own list, import block and lifecycle, because prevent_destroy
+# Four resources, each with its own list, import block and lifecycle, because prevent_destroy
 # covers a whole resource:
 #
 #   - cloudflare_dns_record.web: the apex and www (docs/design/cutover-runbook.md). Its
@@ -18,6 +18,10 @@
 #     Only a CNAME to ghs.googlehosted.com, named one label under the zone. Its prevent_destroy
 #     never comes off either. The mapping and certificate for each live with that service:
 #     explorables' in explorables.tf, the others' in their own projects.
+#
+#   - cloudflare_dns_record.identity: the one TXT record that makes kphutt.com a Bluesky handle.
+#     Exactly _atproto.kphutt.com with exactly the account's DID, nothing else. Its prevent_destroy
+#     never comes off. Changing the DID changes which account the handle verifies to.
 #
 # The test name's records (next.kphutt.com and its ownership CNAME) are not here: they belong
 # to test-domain.tf, and scripts/check_infra.py keeps the two files apart.
@@ -65,6 +69,14 @@ locals {
     "explorables" = { id = "f8e8e1420110c3f1ae27bb6987708c29", name = "explorables.kphutt.com", type = "CNAME", content = "ghs.googlehosted.com", priority = null }
   }
 
+  # Bluesky handle. Exactly one TXT record: _atproto.kphutt.com holding the DID of the account
+  # that uses kphutt.com as its handle. scripts/check_infra.py pins this name and this value
+  # (any other name, value or a second entry fails), and tests/dns.tftest.hcl repeats them.
+  # id null means the apply creates it; the pull request after it writes in the id Cloudflare gave.
+  identity_records = {
+    "atproto" = { id = null, name = "_atproto.kphutt.com", type = "TXT", content = "\"did=did:plc:25m67qcipzldd2mitkbaqth4\"", priority = null }
+  }
+
   # Email. Only MX and TXT records.
   mail_records = {
     "mx-aspmx"        = { id = "c776340c6002a3766293ea4b552a91c8", name = "kphutt.com", type = "MX", content = "aspmx.l.google.com", priority = 10 }
@@ -94,6 +106,12 @@ import {
 import {
   for_each = var.import_production_dns ? { for k, v in local.service_records : k => v if v.id != null } : {}
   to       = cloudflare_dns_record.services[each.key]
+  id       = "${var.cloudflare_zone_id}/${each.value.id}"
+}
+
+import {
+  for_each = var.import_production_dns ? { for k, v in local.identity_records : k => v if v.id != null } : {}
+  to       = cloudflare_dns_record.identity[each.key]
   id       = "${var.cloudflare_zone_id}/${each.value.id}"
 }
 
@@ -159,6 +177,27 @@ resource "cloudflare_dns_record" "services" {
 
   lifecycle {
     # Never lifted. Removing a service's record takes two reviewed steps.
+    prevent_destroy = true
+
+    precondition {
+      condition     = var.cloudflare_zone_id != ""
+      error_message = "Set cloudflare_zone_id: the production records in dns.tf need it for every plan."
+    }
+  }
+}
+
+resource "cloudflare_dns_record" "identity" {
+  for_each = local.identity_records
+  zone_id  = var.cloudflare_zone_id
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  priority = each.value.priority
+  ttl      = 1
+  proxied  = false
+
+  lifecycle {
+    # Never lifted. Removing the record takes two reviewed steps.
     prevent_destroy = true
 
     precondition {

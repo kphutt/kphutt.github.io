@@ -610,5 +610,5 @@ run "the_ownership_record_needs_a_zone_id" {
     cloudflare_zone_id = ""
   }
 
-  expect_failures = [cloudflare_dns_record.apex_verification, cloudflare_dns_record.web, cloudflare_dns_record.mail, cloudflare_dns_record.services]
+  expect_failures = [cloudflare_dns_record.apex_verification, cloudflare_dns_record.web, cloudflare_dns_record.mail, cloudflare_dns_record.services, cloudflare_dns_record.identity]
 }

@@ -149,13 +149,15 @@ def check_revision_naming() -> bool:
 # and each is held to its own rule.
 #
 # infra/dns.tf (PRODUCTION_FILE) holds the zone's production records, adopted by import
-# blocks, as three resources (PRODUCTION below), each over its own fixed list of one-line
+# blocks, as four resources (PRODUCTION below), each over its own fixed list of one-line
 # entries with every value literal, and each with its own import block:
 #
 #   - cloudflare_dns_record.web over local.web_records: the apex and www (A, AAAA, CNAME);
 #   - cloudflare_dns_record.mail over local.mail_records: MX and TXT;
 #   - cloudflare_dns_record.services over local.service_records: other services' records,
-#     only a CNAME to ghs.googlehosted.com, one label under the zone (SERVICE_NAME).
+#     only a CNAME to ghs.googlehosted.com, one label under the zone (SERVICE_NAME);
+#   - cloudflare_dns_record.identity over local.identity_records: the Bluesky handle record,
+#     exactly one TXT record with the name IDENTITY_NAME and the value IDENTITY_VALUE.
 #
 # It is the only file that may import a Cloudflare object, the only file that may use those
 # lists, and its records are DNS only and carry prevent_destroy. So a change to the live site's
@@ -266,7 +268,7 @@ TEST_NAME = "next.kphutt.com"
 # sets both to "false", and a later one sets them back (docs/design/cutover-runbook.md).
 # The mail records need no such constant: their prevent_destroy is always "true".
 WEB_PREVENT_DESTROY = "true"
-# The three production resources: the list each one runs over, the record types that list
+# The four production resources: the list each one runs over, the record types that list
 # may hold, the names it may hold (None: any name in the zone), its prevent_destroy, and
 # whether an entry may be a record that does not exist yet (id = null, so its import is
 # skipped and the apply creates it). The web and services lists may hold a record that
@@ -279,15 +281,26 @@ WEB_PREVENT_DESTROY = "true"
 # not a plain one-label host (so no underscore names such as _dmarc, no deeper names).
 SERVICE_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.]" + re.escape(ZONE) + "$")
 SERVICE_NAME_REFUSED = {ZONE, "www." + ZONE, TEST_NAME}
+# The Bluesky handle record. The name and the value are pinned exactly, and the list holds
+# exactly this one entry. Changing the DID changes which account the handle verifies to, so
+# it is a reviewed change to this constant, dns.tf and tests/dns.tftest.hcl.
+IDENTITY_NAME = "_atproto." + ZONE
+IDENTITY_VALUE = '\\"did=did:plc:25m67qcipzldd2mitkbaqth4\\"'
 PRODUCTION = {
     "web": {"list": "web_records", "types": {"A", "AAAA", "CNAME"},
             "names": {ZONE, "www." + ZONE}, "prevent_destroy": WEB_PREVENT_DESTROY, "new_records": True},
     "mail": {"list": "mail_records", "types": {"MX", "TXT"},
-             "names": None, "prevent_destroy": "true", "new_records": False},
+             "names": None, "prevent_destroy": "true", "new_records": False,
+             # The handle record stays in its own list, and no wildcard name is ever a record.
+             "handle_and_wildcards_refused": True},
     "services": {"list": "service_records", "types": {"CNAME"},
                  "names": None, "prevent_destroy": "true", "new_records": True,
+                 "handle_and_wildcards_refused": True,
                  "name_ok": lambda n: bool(SERVICE_NAME.match(n)) and n not in SERVICE_NAME_REFUSED,
                  "value_ok": lambda v: v == "ghs.googlehosted.com"},
+    "identity": {"list": "identity_records", "types": {"TXT"},
+                 "names": {IDENTITY_NAME}, "prevent_destroy": "true", "new_records": True,
+                 "value_ok": lambda v: v == IDENTITY_VALUE, "max_entries": 1},
 }
 
 
@@ -376,6 +389,8 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if rid == "null" and not rule["new_records"]:
             problems.append(f"local.{lst}[{key}]: id is null, but every record in this list must "
                             "exist and be adopted")
+        # Every rule below runs on the name exactly as written, so a spelling that is not
+        # canonical (capitals, a trailing dot) is refused wherever it was before.
         if not (rname == ZONE or rname.endswith("." + ZONE)):
             problems.append(f"local.{lst}[{key}]: {rname} is not in the {ZONE} zone")
         if rname == TEST_NAME or rname.endswith("." + TEST_NAME):
@@ -389,6 +404,13 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
         if "name_ok" in rule and not rule["name_ok"](rname):
             problems.append(f"local.{lst}[{key}]: {rname} is not allowed here (one label under "
                             f"{ZONE}, never the apex, www or the test name)")
+        # The one use of a normalized name (lowercase, no trailing dot): DNS treats those
+        # spellings as the same name, so the handle name and wildcards are refused in every
+        # list but the identity list whatever the spelling.
+        if rule.get("handle_and_wildcards_refused") and (
+                rname.lower().rstrip(".") == IDENTITY_NAME or "*" in rname):
+            problems.append(f"local.{lst}[{key}]: {rname} is not allowed here (the Bluesky handle "
+                            "name lives only in the identity list, and no wildcard names)")
         if "value_ok" in rule and not rule["value_ok"](content):
             problems.append(f"local.{lst}[{key}]: {content[:40]!r} is not an allowed target here")
         try:
@@ -400,6 +422,8 @@ def check_production_list(texts: dict[str, str], resource: str) -> list[str]:
                             f"priority {priority} is not allowed")
     if not seen:
         problems.append(f"local.{lst} is empty")
+    if "max_entries" in rule and seen > rule["max_entries"]:
+        problems.append(f"local.{lst} holds {seen} entries; at most {rule['max_entries']} is allowed")
     return problems
 
 
