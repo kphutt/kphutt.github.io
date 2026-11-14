@@ -558,6 +558,12 @@ def check_security_txt(root: Path, base: str, failures: list) -> None:
         failures.append(f"hidden files in build output, which the server would serve: {', '.join(sorted(stray))}")
 
 
+def rel_me_profiles(config):
+    """Every profile the homepage must link back with rel="me": sameAs plus relMeOnly."""
+    schema = config.get("params", {}).get("schema", {})
+    return list(schema.get("sameAs", [])) + list(schema.get("relMeOnly", []))
+
+
 def rel_me_problems(html: str, same_as: list) -> list:
     """The profile links the page must carry as rel="me", but does not.
 
@@ -616,8 +622,7 @@ def main() -> int:
 
     # 2b. Every sameAs and relMeOnly profile must be linked back with rel="me" (Mastodon verification).
     if index.is_file():
-        schema = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {}).get("schema", {})
-        profiles = list(schema.get("sameAs", [])) + list(schema.get("relMeOnly", []))
+        profiles = rel_me_profiles(tomllib.loads(CONFIG.read_text(encoding="utf-8")))
         failures += [f"homepage: {p}" for p in rel_me_problems(html, profiles)]
 
     # 3. Files the site is supposed to publish must actually be published.
