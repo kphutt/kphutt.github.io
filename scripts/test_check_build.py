@@ -118,6 +118,12 @@ class PersonImage(unittest.TestCase):
                      '<img src="/x.png" srcset="/a.png 1x, /images/kphutt.jpg 2x">'):
             self.assertTrue(cb.headshot_img_problems(body, self.IMG), body)
 
+    def test_gt_in_alt_cannot_hide_img(self):
+        body = '<img alt="a > b" src=/images/kphutt.jpg>'
+        self.assertTrue(cb.headshot_img_problems(body, self.IMG), body)
+        pic = '<picture><source srcset="/images/kphutt.jpg"><img src="/x.png"></picture>'
+        self.assertTrue(cb.headshot_img_problems(pic, self.IMG), pic)
+
     def test_other_img_passes(self):
         self.assertEqual(cb.headshot_img_problems('<img src="/x.png">', self.IMG), [])
         self.assertEqual(cb.headshot_img_problems('<img src="/old-images/kphutt.jpg">', self.IMG), [])

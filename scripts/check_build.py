@@ -18,6 +18,7 @@ import json
 import re
 import sys
 import tomllib
+from html.parser import HTMLParser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -607,22 +608,44 @@ def person_image_problems(html: str, root: Path, image: str, base: str) -> list:
     return problems
 
 
+class _ImageTagFinder(HTMLParser):
+    """Every <img> and <source> with its attributes. A real parser, so a > inside a quoted
+    attribute value cannot end the tag early and hide a src."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("img", "source"):
+            self.tags.append((tag, attrs))
+
+    @staticmethod
+    def raw(tag, attrs):
+        return "<%s %s>" % (tag, " ".join(f'{n}="{v}"' for n, v in attrs))
+
+
 def headshot_img_problems(html: str, image: str) -> list:
     """<img> tags in one page that show the headshot, by path (src or srcset, any host).
 
     The owner wants the headshot in the structured data only, so no page may show it.
     """
     want = image.lstrip("/")
+    finder = _ImageTagFinder()
+    finder.feed(html)
+    finder.close()
     problems = []
-    for tag in re.findall(r"<img\b[^>]*>", html, re.I):
+    for tag, attrs in finder.tags:
         urls = []
-        for m in re.finditer(r"""\b(?:src|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", tag, re.I):
-            for cand in next(g for g in m.groups() if g is not None).split(","):
+        for name, value in attrs:
+            if name not in ("src", "srcset") or not value:
+                continue
+            for cand in value.split(","):
                 parts = cand.split()
                 if parts:
                     urls.append(re.split(r"[?#]", parts[0], maxsplit=1)[0])
         if any(u == want or u.endswith("/" + want) for u in urls):
-            problems.append(f"an <img> shows the Person image: {tag}")
+            problems.append(f"an <{tag}> shows the Person image: {finder.raw(tag, attrs)}")
     return problems
 
 
