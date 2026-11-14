@@ -36,7 +36,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 
 [params]
   author = "Karsten Huttelmaier"
-  description = "I build identity and security infrastructure."
+  description = "I build identity and security systems. I wrote code for years, then worked on applied cryptography and identity infrastructure."
   ShowReadingTime = false
   ShowShareButtons = false
   ShowPostNavLinks = true
@@ -53,19 +53,23 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   disableThemeToggle = true
   disableScrollToTop = true
 
-  # The social preview image, used for og:image and twitter:image on every page: the
-  # headshot, a path under static/. Link previews (Slack, LinkedIn, iMessage, Discord, X)
-  # show it. It is only in <meta> tags: no page shows it in an <img>, and the build check
-  # fails if one does. The image is square, so layouts/partials/templates/twitter_cards.html
-  # makes the twitter card "summary" rather than the theme's large one.
-  images = ["images/kphutt.jpg"]
+  # The social preview images. Link previews (Slack, LinkedIn, iMessage, Discord, X) show
+  # them. They are only in <meta> tags: no page shows either in an <img>, and the build
+  # check fails if one does.
+  #
+  # images is the og:image, a wide 1200x630 card with the headshot on the left, so
+  # LinkedIn and Facebook, which crop to a wide card, keep the whole head in frame.
+  # twitterImage is the twitter:image, the square headshot, because the "summary" card
+  # (set in layouts/partials/templates/twitter_cards.html) shows a square whole.
+  images = ["images/kphutt-wide.jpg"]
+  twitterImage = "images/kphutt.jpg"
 
-  # Extra og:image tags, read by layouts/partials/templates/opengraph.html. width and height
-  # are the file's real size in pixels.
+  # Extra og:image tags, read by layouts/partials/templates/opengraph.html. They describe
+  # the og:image above: width and height are the file's real size in pixels.
   [params.imageMeta]
     type = "image/jpeg"
     width = 1200
-    height = 1200
+    height = 630
     alt = "Karsten Huttelmaier"
 
 [params.label]
@@ -105,7 +109,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
   publisherType = "Person"
   alternateName = "kphutt"
   # The Person's picture for search engines, a path under static/. It goes in the Person
-  # record and the link-preview tags (params.images): no page shows it.
+  # record and the twitter:image tag (params.twitterImage): no page shows it.
   image = "images/kphutt.jpg"
   knowsAbout = ["Service identity", "PKI", "OAuth", "OpenID Connect"]
   sameAs = [
