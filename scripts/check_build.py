@@ -584,8 +584,8 @@ def person_image_problems(html: str, root: Path, image: str, base: str) -> list:
     """Why the homepage's Person image is wrong, as a list of messages (empty when right).
 
     params.schema.image is a path under static/. The homepage's Person JSON-LD must carry it
-    as an absolute URL, the file must be in the build, and no <img> may show it: the owner
-    wants it in the structured data only.
+    as an absolute URL and the file must be in the build. That no <img> shows it is checked
+    on every page by headshot_img_problems.
     """
     want = f"{base.rstrip('/')}/{image.lstrip('/')}"
     problems = []
@@ -604,11 +604,36 @@ def person_image_problems(html: str, root: Path, image: str, base: str) -> list:
         problems.append(f"Person image is {found.get('image')!r}, expected {want!r}")
     if not (root / image.lstrip("/")).is_file():
         problems.append(f"{image} missing from build output")
-    name = image.rsplit("/", 1)[-1]
+    return problems
+
+
+def headshot_img_problems(html: str, image: str) -> list:
+    """<img> tags in one page that show the headshot, by path (src or srcset, any host).
+
+    The owner wants the headshot in the structured data only, so no page may show it.
+    """
+    want = image.lstrip("/")
+    problems = []
     for tag in re.findall(r"<img\b[^>]*>", html, re.I):
-        if name in tag:
+        urls = []
+        for m in re.finditer(r"""\b(?:src|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", tag, re.I):
+            for cand in next(g for g in m.groups() if g is not None).split(","):
+                parts = cand.split()
+                if parts:
+                    urls.append(re.split(r"[?#]", parts[0], maxsplit=1)[0])
+        if any(u == want or u.endswith("/" + want) for u in urls):
             problems.append(f"an <img> shows the Person image: {tag}")
     return problems
+
+
+def headshot_img_failures(root: Path, image: str) -> list:
+    """headshot_img_problems over every built .html page, each message prefixed with its path."""
+    found = []
+    for page in sorted(root.rglob("*.html")):
+        html = page.read_text(encoding="utf-8", errors="replace")
+        rel = page.relative_to(root).as_posix()
+        found += [f"{rel}: {m}" for m in headshot_img_problems(html, image)]
+    return found
 
 
 def main() -> int:
@@ -661,6 +686,7 @@ def main() -> int:
         schema = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {}).get("schema", {})
         if schema.get("image"):
             failures += [f"homepage: {m}" for m in person_image_problems(html, root, schema["image"], base)]
+            failures += headshot_img_failures(root, schema["image"])
         else:
             failures.append("params.schema.image is not set")
 

@@ -113,11 +113,25 @@ class PersonImage(unittest.TestCase):
         self.assertTrue(self.problems(self.page(), exists=False))
 
     def test_visible_img_fails(self):
-        self.assertTrue(self.problems(self.page(body=f'<img src="{self.URL}">')))
-        self.assertTrue(self.problems(self.page(body="<img src=/images/kphutt.jpg>")))
+        for body in (f'<img src="{self.URL}">', "<img src=/images/kphutt.jpg>",
+                     '<img src="../images/kphutt.jpg">',
+                     '<img src="/x.png" srcset="/a.png 1x, /images/kphutt.jpg 2x">'):
+            self.assertTrue(cb.headshot_img_problems(body, self.IMG), body)
 
     def test_other_img_passes(self):
-        self.assertEqual(self.problems(self.page(body='<img src="/x.png">')), [])
+        self.assertEqual(cb.headshot_img_problems('<img src="/x.png">', self.IMG), [])
+        self.assertEqual(cb.headshot_img_problems('<img src="/old-images/kphutt.jpg">', self.IMG), [])
+
+    def test_img_on_a_non_home_page_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "posts" / "x").mkdir(parents=True)
+            (root / "index.html").write_text("<p>home</p>", encoding="utf-8")
+            (root / "posts" / "x" / "index.html").write_text(
+                '<img src="/images/kphutt.jpg">', encoding="utf-8")
+            found = cb.headshot_img_failures(root, self.IMG)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("posts/x/index.html", found[0])
 
 
 class NoScriptNoFonts(unittest.TestCase):
