@@ -205,6 +205,42 @@ class PreviewMeta(unittest.TestCase):
             (Path(d) / "index.html").write_text("<p>x</p>", encoding="utf-8")
             self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE))
 
+    @staticmethod
+    def jpeg(width, height):
+        sof = b"\xff\xc0\x00\x0b\x08" + height.to_bytes(2, "big") + width.to_bytes(2, "big") + b"\x01\x01\x11\x00"
+        app = b"\xff\xe0\x00\x04\x00\x00"
+        return b"\xff\xd8" + app + sof + b"\xff\xd9"
+
+    def size_page(self, width, height, mime="image/jpeg"):
+        return (self.page() + f'<meta property="og:image:type" content="{mime}">'
+                f'<meta property="og:image:width" content="{width}">'
+                f'<meta property="og:image:height" content="{height}">')
+
+    def test_jpeg_size_reads_the_frame_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.jpg"
+            f.write_bytes(self.jpeg(640, 480))
+            self.assertEqual(cb.jpeg_size(f), (640, 480))
+            f.write_bytes(b"not a jpeg")
+            with self.assertRaises(ValueError):
+                cb.jpeg_size(f)
+
+    def test_preview_size_must_match_the_real_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "images").mkdir()
+            (root / "images" / "kphutt.jpg").write_bytes(self.jpeg(1200, 1200))
+            for w, h, mime, bad in ((1200, 1200, "image/jpeg", False), (640, 1200, "image/jpeg", True),
+                                    (1200, 640, "image/jpeg", True), (1200, 1200, "image/png", True)):
+                (root / "index.html").write_text(self.size_page(w, h, mime), encoding="utf-8")
+                found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier", True)
+                self.assertEqual(bool(found), bad, (w, h, mime, found))
+
+    def test_missing_image_file_fails_the_size_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "index.html").write_text(self.size_page(1200, 1200), encoding="utf-8")
+            self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE, "", True))
+
 
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""

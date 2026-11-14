@@ -35,9 +35,10 @@ EXPECTED_FILES = {
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
-    # Referenced only from the WebSite JSON-LD image, which is a string in a script block,
-    # so the internal-reference check below cannot see it. Losing it silently drops that image.
-    "og-image.png": "the WebSite structured data would point at a missing image",
+    # Referenced only from each post's BlogPosting JSON-LD image, which is a string in a
+    # script block, so the internal-reference check below cannot see it. Losing it silently
+    # drops that image.
+    "og-image.png": "the posts' BlogPosting structured data would point at a missing image",
     # Nothing links it. IndexNow engines fetch it to check the key scripts/indexnow.py sends.
     "indexnow.txt": "IndexNow engines would reject every submission",
     # Linked from extend_head.html, so the reference check does cover it -- but it is
@@ -666,12 +667,40 @@ class _MetaFinder(HTMLParser):
                 self.metas.append((key, d.get("content")))
 
 
-def preview_meta_problems(html: str, image: str, base: str, alt: str = "") -> list:
+def jpeg_size(path: Path) -> tuple:
+    """(width, height) in pixels of a JPEG, read from its SOF marker with the stdlib only.
+    Raises ValueError if the file is not a JPEG or has no frame header."""
+    data = path.read_bytes()
+    if data[:2] != b"\xff\xd8":
+        raise ValueError(f"{path.name} is not a JPEG")
+    i = 2
+    while i + 4 <= len(data):
+        if data[i] != 0xFF:
+            raise ValueError(f"{path.name}: bad JPEG marker at byte {i}")
+        marker = data[i + 1]
+        if marker == 0xFF:  # fill byte
+            i += 1
+            continue
+        if marker in (0x01, *range(0xD0, 0xD8)):  # standalone markers, no length
+            i += 2
+            continue
+        length = int.from_bytes(data[i + 2:i + 4], "big")
+        # SOF0..SOF15 carry the frame size, except DHT (C4), JPG (C8) and DAC (CC).
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height = int.from_bytes(data[i + 5:i + 7], "big")
+            width = int.from_bytes(data[i + 7:i + 9], "big")
+            return width, height
+        i += 2 + length
+    raise ValueError(f"{path.name} has no JPEG frame header")
+
+
+def preview_meta_problems(html: str, image: str, base: str, alt: str = "", real=None) -> list:
     """Why one page's link-preview tags are wrong, as a list of messages (empty when right).
 
     og:image and twitter:image must each appear once and be the headshot's absolute URL, and
     twitter:card must be "summary" (the image is square, and the large card crops it badly).
-    When alt is given, og:image:alt must carry it.
+    When alt is given, og:image:alt must carry it. When real is given, as a dict with the
+    image file's actual "type", "width" and "height", og:image:type/width/height must match it.
     """
     want = f"{base.rstrip('/')}/{image.lstrip('/')}"
     finder = _MetaFinder()
@@ -681,6 +710,9 @@ def preview_meta_problems(html: str, image: str, base: str, alt: str = "") -> li
     checks = [("og:image", want), ("twitter:image", want), ("twitter:card", "summary")]
     if alt:
         checks.append(("og:image:alt", alt))
+    if real:
+        checks += [("og:image:type", real["type"]), ("og:image:width", str(real["width"])),
+                   ("og:image:height", str(real["height"]))]
     for key, expected in checks:
         values = [v for k, v in finder.metas if k == key]
         if values != [expected]:
@@ -688,11 +720,21 @@ def preview_meta_problems(html: str, image: str, base: str, alt: str = "") -> li
     return problems
 
 
-def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> list:
-    """preview_meta_problems over every built page that has an og:url (aliases and the 404
-    page carry none), each message prefixed with its path. Fails if no page qualified, so
-    the check cannot pass by finding nothing."""
+def preview_meta_failures(root: Path, image: str, base: str, alt: str = "",
+                          check_file: bool = False) -> list:
+    """preview_meta_problems over every built page that has an og:url (alias redirect pages
+    carry none; the 404 page has one, so it is checked), each message prefixed with its path.
+    Fails if no page qualified, so the check cannot pass by finding nothing. With check_file,
+    og:image:type/width/height must also match the built image file's real format and size."""
     found = []
+    real = None
+    if check_file:
+        file = root / image.lstrip("/")
+        try:
+            width, height = jpeg_size(file)
+        except (OSError, ValueError) as e:
+            return [f"cannot read the preview image {image} to check its size: {e}"]
+        real = {"type": "image/jpeg", "width": width, "height": height}
     seen = 0
     for page in sorted(root.rglob("*.html")):
         html = page.read_text(encoding="utf-8", errors="replace")
@@ -700,7 +742,7 @@ def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> l
             continue
         seen += 1
         rel = page.relative_to(root).as_posix()
-        found += [f"{rel}: {m}" for m in preview_meta_problems(html, image, base, alt)]
+        found += [f"{rel}: {m}" for m in preview_meta_problems(html, image, base, alt, real)]
     if not seen:
         found.append("no built page has og:url, so the link-preview tags were not checked")
     return found
@@ -771,7 +813,8 @@ def main() -> int:
             # twitter:image tags, the small twitter card, and the alt text.
             params = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {})
             failures += preview_meta_failures(
-                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""))
+                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""),
+                check_file=schema["image"].lower().endswith((".jpg", ".jpeg")))
         else:
             failures.append("params.schema.image is not set")
 
