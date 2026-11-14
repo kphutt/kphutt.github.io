@@ -35,10 +35,9 @@ EXPECTED_FILES = {
     "llms.txt": "the plain-text index for language models would be gone",
     "sitemap.xml": "robots.txt points crawlers at it; a dead pointer is worse than none",
     "index.xml": "the RSS feed anyone subscribed to would 404",
-    # Referenced only from og:image and twitter:image, which are content= attributes, so
-    # the internal-reference check below cannot see it. Losing it means every link preview
-    # silently falls back to a bare URL.
-    "og-image.png": "link previews would lose their image",
+    # Referenced only from the WebSite JSON-LD image, which is a string in a script block,
+    # so the internal-reference check below cannot see it. Losing it silently drops that image.
+    "og-image.png": "the WebSite structured data would point at a missing image",
     # Nothing links it. IndexNow engines fetch it to check the key scripts/indexnow.py sends.
     "indexnow.txt": "IndexNow engines would reject every submission",
     # Linked from extend_head.html, so the reference check does cover it -- but it is
@@ -112,6 +111,8 @@ OVERRIDDEN_THEME_FILES = {
     "_partials/head.html": "c7ef58590d6e4c755f1d2a575668095f3539475c61b39fdc12fd6e30025d30b0",
     "_partials/footer.html": "94921247defd67d205aaa2358d96365664e75de4a30d44b0ed36c6635c738543",
     "_partials/templates/schema_json.html": "3fd05ccc156d8eda928c923776b53044097600c9c31a4812e3ebcfe9196b2ffa",
+    "_partials/templates/opengraph.html": "49e92e8239e5e050920a05ebf97578652b5647b17ec8b3c7f10362bef291ffea",
+    "_partials/templates/twitter_cards.html": "329cc121fc4f838d5f36d3efd797200e94231b612278f5d97c346a8546a87811",
 }
 
 
@@ -649,6 +650,62 @@ def headshot_img_problems(html: str, image: str) -> list:
     return problems
 
 
+class _MetaFinder(HTMLParser):
+    """Every <meta> tag as a (name-or-property, content) pair. A real parser, so Hugo's
+    minified unquoted attributes and the quoted ones read the same."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.metas = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            d = dict(attrs)
+            key = d.get("property") or d.get("name")
+            if key:
+                self.metas.append((key, d.get("content")))
+
+
+def preview_meta_problems(html: str, image: str, base: str, alt: str = "") -> list:
+    """Why one page's link-preview tags are wrong, as a list of messages (empty when right).
+
+    og:image and twitter:image must each appear once and be the headshot's absolute URL, and
+    twitter:card must be "summary" (the image is square, and the large card crops it badly).
+    When alt is given, og:image:alt must carry it.
+    """
+    want = f"{base.rstrip('/')}/{image.lstrip('/')}"
+    finder = _MetaFinder()
+    finder.feed(html)
+    finder.close()
+    problems = []
+    checks = [("og:image", want), ("twitter:image", want), ("twitter:card", "summary")]
+    if alt:
+        checks.append(("og:image:alt", alt))
+    for key, expected in checks:
+        values = [v for k, v in finder.metas if k == key]
+        if values != [expected]:
+            problems.append(f"{key} is {values!r}, expected [{expected!r}]")
+    return problems
+
+
+def preview_meta_failures(root: Path, image: str, base: str, alt: str = "") -> list:
+    """preview_meta_problems over every built page that has an og:url (aliases and the 404
+    page carry none), each message prefixed with its path. Fails if no page qualified, so
+    the check cannot pass by finding nothing."""
+    found = []
+    seen = 0
+    for page in sorted(root.rglob("*.html")):
+        html = page.read_text(encoding="utf-8", errors="replace")
+        if not re.search(r"<meta property=[\"']?og:url\b", html):
+            continue
+        seen += 1
+        rel = page.relative_to(root).as_posix()
+        found += [f"{rel}: {m}" for m in preview_meta_problems(html, image, base, alt)]
+    if not seen:
+        found.append("no built page has og:url, so the link-preview tags were not checked")
+    return found
+
+
 def headshot_img_failures(root: Path, image: str) -> list:
     """headshot_img_problems over every built .html page, each message prefixed with its path."""
     found = []
@@ -710,6 +767,11 @@ def main() -> int:
         if schema.get("image"):
             failures += [f"homepage: {m}" for m in person_image_problems(html, root, schema["image"], base)]
             failures += headshot_img_failures(root, schema["image"])
+            # 2d. Every page's link preview shows the same headshot: the og:image and
+            # twitter:image tags, the small twitter card, and the alt text.
+            params = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {})
+            failures += preview_meta_failures(
+                root, schema["image"], base, params.get("imageMeta", {}).get("alt", ""))
         else:
             failures.append("params.schema.image is not set")
 

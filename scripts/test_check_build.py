@@ -140,6 +140,72 @@ class PersonImage(unittest.TestCase):
         self.assertIn("posts/x/index.html", found[0])
 
 
+class PreviewMeta(unittest.TestCase):
+    BASE = "https://kphutt.com"
+    IMG = "images/kphutt.jpg"
+    URL = "https://kphutt.com/images/kphutt.jpg"
+
+    def page(self, og=URL, tw=URL, card="summary", alt="Karsten Huttelmaier", quoted=True):
+        q = '"' if quoted else ""
+        parts = [f"<meta property={q}og:url{q} content={q}https://kphutt.com/{q}>"]
+        if og is not None:
+            parts.append(f"<meta property={q}og:image{q} content={q}{og}{q}>")
+        if alt is not None:
+            # A value with a space is always quoted, even in minified output.
+            parts.append(f'<meta property={q}og:image:alt{q} content="{alt}">')
+        if card is not None:
+            parts.append(f"<meta name={q}twitter:card{q} content={q}{card}{q}>")
+        if tw is not None:
+            parts.append(f"<meta name={q}twitter:image{q} content={q}{tw}{q}>")
+        return "".join(parts)
+
+    def problems(self, html, alt="Karsten Huttelmaier"):
+        return cb.preview_meta_problems(html, self.IMG, self.BASE, alt)
+
+    def test_config_sets_the_image(self):
+        import tomllib
+        cfg = tomllib.loads(cb.CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual(cfg["params"]["images"], [self.IMG])
+        self.assertEqual(cfg["params"]["imageMeta"]["alt"], "Karsten Huttelmaier")
+
+    def test_correct_page_passes(self):
+        self.assertEqual(self.problems(self.page()), [])
+        self.assertEqual(self.problems(self.page(quoted=False)), [])
+
+    def test_missing_or_wrong_tags_fail(self):
+        for kw in ({"og": None}, {"tw": None}, {"card": None}, {"alt": None},
+                   {"og": "https://kphutt.com/og-image.png"},
+                   {"tw": "/images/kphutt.jpg"},
+                   {"og": "http://kphutt.com/images/kphutt.jpg"},
+                   {"card": "summary_large_image"},
+                   {"alt": "someone else"}):
+            self.assertTrue(self.problems(self.page(**kw)), kw)
+
+    def test_duplicate_image_fails(self):
+        html = self.page() + f'<meta property="og:image" content="{self.URL}">'
+        self.assertTrue(self.problems(html))
+
+    def test_alt_is_not_required_when_not_configured(self):
+        self.assertEqual(self.problems(self.page(alt=None), alt=""), [])
+
+    def test_every_page_with_og_url_is_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "posts" / "x").mkdir(parents=True)
+            (root / "index.html").write_text(self.page(), encoding="utf-8")
+            (root / "404.html").write_text("<p>no og url here</p>", encoding="utf-8")
+            (root / "posts" / "x" / "index.html").write_text(
+                self.page(card="summary_large_image"), encoding="utf-8")
+            found = cb.preview_meta_failures(root, self.IMG, self.BASE, "Karsten Huttelmaier")
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("posts/x/index.html", found[0])
+
+    def test_no_checkable_page_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "index.html").write_text("<p>x</p>", encoding="utf-8")
+            self.assertTrue(cb.preview_meta_failures(Path(d), self.IMG, self.BASE))
+
+
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""
 
