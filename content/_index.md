@@ -5,7 +5,7 @@ title: "Karsten Huttelmaier"
 description: "I build identity and security systems. I wrote code for years, then worked on applied cryptography and identity infrastructure."
 ---
 
-I build identity and security systems like service identity, PKI, OAuth and OIDC. I wrote code for years, consulted on human identity systems, then worked on Applied Cryptography at AWS and identity infrastructure at Snowflake.
+I build identity and security systems like service identity, PKI, OAuth and OIDC. I wrote code for years, consulted on human identity systems, then worked on applied cryptography and identity infrastructure.
 
 ---
 

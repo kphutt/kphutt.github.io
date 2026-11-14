@@ -30,6 +30,11 @@ TEXT_SUFFIXES = {".html", ".xml", ".txt", ".json", ".css", ".js"}
 
 # Files the build is expected to publish, each with why it matters. All of these come from
 # configuration rather than from a file in content/, so losing one is silent.
+# Company names the site must not print: the owner describes past work without them. Matched
+# as whole words, case-insensitively, in built .html pages and llms.txt only, so "Amazonbot"
+# in robots.txt is not a hit. Add a name here to ban it.
+BANNED_WORDS = ("AWS", "Amazon Web Services", "Snowflake")
+
 EXPECTED_FILES = {
     "robots.txt": "the crawler policy and the sitemap pointer would be gone",
     "llms.txt": "the plain-text index for language models would be gone",
@@ -783,6 +788,21 @@ def preview_meta_failures(root: Path, image: str, base: str, alt: str = "",
     return found
 
 
+def banned_word_failures(root: Path) -> list:
+    """Every built .html page and llms.txt that holds a BANNED_WORDS name as a whole word."""
+    pattern = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(w) for w in BANNED_WORDS), re.I)
+    found = []
+    files = sorted(root.rglob("*.html")) + [root / "llms.txt"]
+    for page in files:
+        if not page.is_file():
+            continue
+        hits = sorted({m.group(0).lower() for m in pattern.finditer(
+            page.read_text(encoding="utf-8", errors="replace"))})
+        if hits:
+            found.append(f"{page.relative_to(root).as_posix()}: banned word(s) {', '.join(hits)}")
+    return found
+
+
 def headshot_img_failures(root: Path, image: str) -> list:
     """headshot_img_problems over every built .html page, each message prefixed with its path."""
     found = []
@@ -858,6 +878,9 @@ def main() -> int:
                     root, og_image, base, params.get("imageMeta", {}).get("alt", ""), tw_image)
         else:
             failures.append("params.schema.image is not set")
+
+    # 2e. No company names in the built pages or llms.txt.
+    failures += banned_word_failures(root)
 
     # 3. Files the site is supposed to publish must actually be published.
     #

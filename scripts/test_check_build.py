@@ -342,6 +342,30 @@ class SiteDescription(unittest.TestCase):
         self.assertEqual(m.group(1), site)
 
 
+class BannedWords(unittest.TestCase):
+    """No company names on the site (cb.BANNED_WORDS), whole words only, in .html and llms.txt."""
+
+    def found(self, **files):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for name, text in files.items():
+                (root / name.replace("_", ".")).write_text(text, encoding="utf-8")
+            return cb.banned_word_failures(root)
+
+    def test_every_banned_name_fails_in_html_and_llms(self):
+        for word in cb.BANNED_WORDS:
+            self.assertTrue(self.found(index_html=f"<p>at {word.upper()} for years</p>"), word)
+            self.assertTrue(self.found(llms_txt=f"worked at {word.lower()}"), word)
+
+    def test_whole_words_only_and_other_files_are_not_scanned(self):
+        self.assertEqual(self.found(index_html="<p>laws, Amazonbot, snowflakes</p>",
+                                    robots_txt="User-agent: Amazonbot"), [])
+
+    def test_the_real_home_page_source_is_clean(self):
+        text = (cb.CONFIG.parent / "content" / "_index.md").read_text(encoding="utf-8")
+        self.assertEqual(self.found(index_html=text), [])
+
+
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""
 
