@@ -45,3 +45,10 @@
 <link rel="alternate" type="application/rss+xml" href="{{ .Permalink }}" title="{{ site.Title }}">
 {{- end }}
 {{- end }}
+{{- /*
+  Mastodon profile verification. Mastodon marks a profile link as verified when the page it
+  points at links back to the profile with rel="me". This is a plain link, not a script, and
+  nothing loads it, so the CSP is unchanged. The profile it names is the first-party
+  Mastodon profile in params.schema.sameAs (hugo.toml); keep the two the same.
+*/ -}}
+<link rel="me" href="https://infosec.exchange/@kphutt">
