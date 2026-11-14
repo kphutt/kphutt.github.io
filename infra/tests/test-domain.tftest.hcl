@@ -541,6 +541,7 @@ run "on_without_a_zone_id_is_refused" {
     cloudflare_dns_record.web,
     cloudflare_dns_record.mail,
     cloudflare_dns_record.services,
+    cloudflare_dns_record.identity,
     cloudflare_dns_record.apex_verification,
   ]
 }

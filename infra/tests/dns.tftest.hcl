@@ -106,8 +106,8 @@ run "the_production_records_are_exactly_these" {
   command = plan
 
   assert {
-    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 2
-    error_message = "The zone has 21 production records: web (4 apex A, 4 apex AAAA, www), mail (7 MX, 3 TXT) and services (lodestar, explorables)."
+    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 2 && length(cloudflare_dns_record.identity) == 1
+    error_message = "The zone has 22 production records: web (4 apex A, 4 apex AAAA, www), mail (7 MX, 3 TXT), services (lodestar, explorables) and identity (the Bluesky handle)."
   }
   assert {
     condition = toset([for r in values(cloudflare_dns_record.services) : "${r.name} ${r.type} ${r.content}"]) == toset([
@@ -115,6 +115,12 @@ run "the_production_records_are_exactly_these" {
       "explorables.kphutt.com CNAME ghs.googlehosted.com",
     ])
     error_message = "A service record's name, type or value changed. Change it here and in dns.tf, in review."
+  }
+  assert {
+    condition = toset([for r in values(cloudflare_dns_record.identity) : "${r.name} ${r.type} ${r.content}"]) == toset([
+      "_atproto.kphutt.com TXT \"did=did:plc:25m67qcipzldd2mitkbaqth4\"",
+    ])
+    error_message = "The Bluesky handle record's name, type or DID changed. Change it here and in dns.tf, in review. A new DID points the handle at another account."
   }
   assert {
     condition     = cloudflare_dns_record.services["lodestar"].proxied == false && cloudflare_dns_record.services["lodestar"].priority == null
@@ -164,19 +170,19 @@ run "the_production_records_are_exactly_these" {
     error_message = "The MX priorities changed."
   }
   assert {
-    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services)) : r.priority == null if r.type != "MX"])
+    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services), values(cloudflare_dns_record.identity)) : r.priority == null if r.type != "MX"])
     error_message = "Only MX records have a priority."
   }
   assert {
-    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services)) : r.proxied == false && r.ttl == 1])
+    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services), values(cloudflare_dns_record.identity)) : r.proxied == false && r.ttl == 1])
     error_message = "Production records are DNS only, with Cloudflare's automatic TTL."
   }
   assert {
-    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services)) : r.zone_id == var.cloudflare_zone_id])
+    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services), values(cloudflare_dns_record.identity)) : r.zone_id == var.cloudflare_zone_id])
     error_message = "Production records are in the kphutt.com zone."
   }
   assert {
-    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services)) : r.name != "next.kphutt.com" && !endswith(r.name, ".next.kphutt.com")])
+    condition     = alltrue([for r in concat(values(cloudflare_dns_record.web), values(cloudflare_dns_record.mail), values(cloudflare_dns_record.services), values(cloudflare_dns_record.identity)) : r.name != "next.kphutt.com" && !endswith(r.name, ".next.kphutt.com")])
     error_message = "The test name's records belong to test-domain.tf, not dns.tf."
   }
 }
@@ -233,7 +239,7 @@ run "the_test_name_does_not_change_the_production_records" {
   }
 
   assert {
-    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 2 && length(cloudflare_dns_record.test) == 8
+    condition     = length(cloudflare_dns_record.web) == 9 && length(cloudflare_dns_record.mail) == 10 && length(cloudflare_dns_record.services) == 2 && length(cloudflare_dns_record.identity) == 1 && length(cloudflare_dns_record.test) == 8
     error_message = "Turning the test name on adds its records and leaves the production records as they are."
   }
 }
@@ -264,5 +270,5 @@ run "production_records_need_a_zone_id" {
     cloudflare_zone_id = ""
   }
 
-  expect_failures = [cloudflare_dns_record.web, cloudflare_dns_record.mail, cloudflare_dns_record.services, cloudflare_dns_record.apex_verification]
+  expect_failures = [cloudflare_dns_record.web, cloudflare_dns_record.mail, cloudflare_dns_record.services, cloudflare_dns_record.identity, cloudflare_dns_record.apex_verification]
 }

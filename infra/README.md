@@ -12,7 +12,7 @@ The plan this implements is [docs/design/site-move.md](../docs/design/site-move.
 | `artifact-registry.tf` | The image repository, with a cleanup policy |
 | `identities.tf` | The runtime and deployer service accounts, and Workload Identity Federation |
 | `monitoring.tf` | The billing budget alert, and the request-log bucket, sink and exclusion |
-| `dns.tf` | The zone's production DNS records at Cloudflare: the apex, `www`, mail. The only file that may manage them |
+| `dns.tf` | The zone's production DNS records at Cloudflare: the apex, `www`, mail, services and the Bluesky handle. The only file that may manage them |
 | `test-domain.tf` | The test name: domain mapping, its DNS record at Cloudflare, ownership proof. Off by default |
 | `site-domain.tf` | The live names: ownership proof for `kphutt.com`, and the mappings for `kphutt.com` and `www` |
 | `explorables.tf` | The explorables service and its mapping for `explorables.kphutt.com` |
@@ -249,7 +249,7 @@ request, such as one that moves ownership to another account.
 ## Production DNS (`dns.tf`)
 
 Every record in the kphutt.com zone, except the test name's and kphutt.com's ownership record
-(`site-domain.tf`), is in `dns.tf`, as three resources:
+(`site-domain.tf`), is in `dns.tf`, as four resources:
 
 - `cloudflare_dns_record.web` (list `local.web_records`): the apex's four A and four AAAA
   records and the `www` CNAME that serve the live site, pointing at the Cloud Run mappings
@@ -262,6 +262,11 @@ Every record in the kphutt.com zone, except the test name's and kphutt.com's own
   `explorables.kphutt.com`, the same kind of CNAME, for this project's explorables service
   (`explorables.tf` holds its mapping). In this list, the
   guards below allow only CNAMEs to Google's mapping host, one label under the zone.
+- `cloudflare_dns_record.identity` (list `local.identity_records`): the Bluesky handle record,
+  `_atproto.kphutt.com`, a TXT record whose value is `did=` and the DID of the account that
+  uses `kphutt.com` as its handle. Bluesky reads it to check the handle. Changing the DID
+  changes which account the handle verifies to. Its entry starts with `id = null`, so the
+  apply creates it, and the pull request after that apply writes in the id Cloudflare gave it.
 
 All are DNS only. They are separate resources, not one, because `prevent_destroy` covers a whole
 resource. So a change that has to delete a web record can unlock the web records alone,
@@ -309,13 +314,15 @@ The guards:
     alone fails the check:
     - in `dns.tf`, `prevent_destroy = true` becomes `false` on `cloudflare_dns_record.web`.
     - in `scripts/check_infra.py`, `WEB_PREVENT_DESTROY = "true"` becomes `"false"`.
-- `scripts/check_infra.py` fails unless `dns.tf` holds only these three resources. Each has
+- `scripts/check_infra.py` fails unless `dns.tf` holds only these four resources. Each has
   its own fixed list, with one literal line per record, its own import block, DNS only,
   automatic TTL and `prevent_destroy` as above. Each list allows only its own kind of
   record, so a record cannot be moved between lists to unlock it:
   - web: A, AAAA and CNAME records named `kphutt.com` or `www.kphutt.com`
   - mail: MX and TXT
   - services: CNAMEs to `ghs.googlehosted.com`, one label under the zone
+  - identity: exactly one TXT record, with the exact name `_atproto.kphutt.com` and the exact
+    DID value. No other underscore name and no wildcard name is allowed in any list.
 
   Only `dns.tf` may import a Cloudflare record, and no other file may use any of the lists.
   The test name and anything under it are refused here, and every other file is still
