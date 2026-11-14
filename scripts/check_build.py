@@ -580,6 +580,37 @@ def rel_me_problems(html: str, same_as: list) -> list:
     return [f"no <link rel=\"me\"> for {url}" for url in same_as if url not in found]
 
 
+def person_image_problems(html: str, root: Path, image: str, base: str) -> list:
+    """Why the homepage's Person image is wrong, as a list of messages (empty when right).
+
+    params.schema.image is a path under static/. The homepage's Person JSON-LD must carry it
+    as an absolute URL, the file must be in the build, and no <img> may show it: the owner
+    wants it in the structured data only.
+    """
+    want = f"{base.rstrip('/')}/{image.lstrip('/')}"
+    problems = []
+    found = None
+    for block in re.findall(r'<script\b[^>]*ld\+json[^>]*>(.*?)</script>', html, re.I | re.S):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        for node in data.get("@graph", [data]) if isinstance(data, dict) else data:
+            if isinstance(node, dict) and node.get("@type") == "Person":
+                found = node
+    if found is None:
+        problems.append("homepage has no Person JSON-LD")
+    elif found.get("image") != want:
+        problems.append(f"Person image is {found.get('image')!r}, expected {want!r}")
+    if not (root / image.lstrip("/")).is_file():
+        problems.append(f"{image} missing from build output")
+    name = image.rsplit("/", 1)[-1]
+    for tag in re.findall(r"<img\b[^>]*>", html, re.I):
+        if name in tag:
+            problems.append(f"an <img> shows the Person image: {tag}")
+    return problems
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "public")
     if not root.is_dir():
@@ -624,6 +655,14 @@ def main() -> int:
     if index.is_file():
         profiles = rel_me_profiles(tomllib.loads(CONFIG.read_text(encoding="utf-8")))
         failures += [f"homepage: {p}" for p in rel_me_problems(html, profiles)]
+
+    # 2c. The Person JSON-LD carries the headshot, and nothing visible shows it.
+    if index.is_file():
+        schema = tomllib.loads(CONFIG.read_text(encoding="utf-8")).get("params", {}).get("schema", {})
+        if schema.get("image"):
+            failures += [f"homepage: {m}" for m in person_image_problems(html, root, schema["image"], base)]
+        else:
+            failures.append("params.schema.image is not set")
 
     # 3. Files the site is supposed to publish must actually be published.
     #

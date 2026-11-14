@@ -74,6 +74,52 @@ class RelMeConfig(unittest.TestCase):
         self.assertEqual(len(cb.rel_me_problems(html, self.profiles)), len(self.schema["sameAs"]))
 
 
+class PersonImage(unittest.TestCase):
+    BASE = "https://kphutt.com"
+    IMG = "images/kphutt.jpg"
+    URL = "https://kphutt.com/images/kphutt.jpg"
+
+    def page(self, image=URL, body=""):
+        import json
+        node = {"@type": "Person", "name": "A"}
+        if image is not None:
+            node["image"] = image
+        ld = json.dumps({"@context": "https://schema.org", "@graph": [node]})
+        return f'<script type="application/ld+json">{ld}</script>{body}'
+
+    def problems(self, html, exists=True):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            if exists:
+                (root / "images").mkdir()
+                (root / self.IMG).write_bytes(b"x")
+            return cb.person_image_problems(html, root, self.IMG, self.BASE)
+
+    def test_config_sets_the_image(self):
+        import tomllib
+        cfg = tomllib.loads(cb.CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual(cfg["params"]["schema"]["image"], self.IMG)
+
+    def test_correct_page_passes(self):
+        self.assertEqual(self.problems(self.page()), [])
+
+    def test_missing_image_fails(self):
+        self.assertTrue(self.problems(self.page(image=None)))
+
+    def test_relative_image_fails(self):
+        self.assertTrue(self.problems(self.page(image="/images/kphutt.jpg")))
+
+    def test_missing_file_fails(self):
+        self.assertTrue(self.problems(self.page(), exists=False))
+
+    def test_visible_img_fails(self):
+        self.assertTrue(self.problems(self.page(body=f'<img src="{self.URL}">')))
+        self.assertTrue(self.problems(self.page(body="<img src=/images/kphutt.jpg>")))
+
+    def test_other_img_passes(self):
+        self.assertEqual(self.problems(self.page(body='<img src="/x.png">')), [])
+
+
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""
 
