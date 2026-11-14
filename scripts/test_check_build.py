@@ -21,6 +21,30 @@ import check_build as cb  # noqa: E402
 GOOD = '{"@context":"https://schema.org","@type":"Person","name":"A"}'
 
 
+class RelMe(unittest.TestCase):
+    URLS = ["https://infosec.exchange/@kphutt", "https://github.com/kphutt"]
+
+    def test_a_link_for_every_profile_passes(self):
+        html = "".join(f"<link rel=me href={u}>" for u in self.URLS)
+        self.assertEqual(cb.rel_me_problems(html, self.URLS), [])
+
+    def test_quoted_attributes_pass(self):
+        html = "".join(f'<link href="{u}" rel="me">' for u in self.URLS)
+        self.assertEqual(cb.rel_me_problems(html, self.URLS), [])
+
+    def test_a_missing_profile_fails(self):
+        html = f"<link rel=me href={self.URLS[1]}>"
+        self.assertEqual(len(cb.rel_me_problems(html, self.URLS)), 1)
+
+    def test_another_rel_does_not_count(self):
+        html = "".join(f"<link rel=alternate href={u}>" for u in self.URLS)
+        self.assertEqual(len(cb.rel_me_problems(html, self.URLS)), 2)
+
+    def test_a_plain_anchor_does_not_count(self):
+        html = "".join(f'<a rel="me" href="{u}">x</a>' for u in self.URLS)
+        self.assertEqual(len(cb.rel_me_problems(html, self.URLS)), 2)
+
+
 class NoScriptNoFonts(unittest.TestCase):
     """The site refuses every script file and every web font: script-src 'none', no font-src."""
 
