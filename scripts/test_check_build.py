@@ -9,6 +9,7 @@ exactly a well-formed data block, and that every script a browser would run stil
 
 from __future__ import annotations
 
+import re
 import sys
 import tempfile
 import unittest
@@ -324,6 +325,21 @@ class PreviewMeta(unittest.TestCase):
         found = self.check_image(1200, 630, "image/webp", name="og-image.webp", data=b"RIFF")
         self.assertTrue(found)
         self.assertIn("use JPEG or PNG", found[0])
+
+
+class SiteDescription(unittest.TestCase):
+    """The home page's description is the text under every link preview and search result."""
+    MIN = 100
+
+    def test_home_page_and_site_description_are_long_enough_and_agree(self):
+        import tomllib
+        cfg = tomllib.loads(cb.CONFIG.read_text(encoding="utf-8"))
+        front = (cb.CONFIG.parent / "content" / "_index.md").read_text(encoding="utf-8")
+        m = re.search(r'^description:\s*"(.*)"\s*$', front, re.M)
+        self.assertTrue(m, "content/_index.md has no description")
+        site = cfg["params"]["description"]
+        self.assertGreaterEqual(len(site), self.MIN)
+        self.assertEqual(m.group(1), site)
 
 
 class NoScriptNoFonts(unittest.TestCase):

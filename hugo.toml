@@ -36,7 +36,7 @@ ignoreFiles = ['[\\/]content[\\/]LICENSE$']
 
 [params]
   author = "Karsten Huttelmaier"
-  description = "I build identity and security infrastructure."
+  description = "I build identity and security systems. I wrote code for years, then worked on applied cryptography and identity infrastructure."
   ShowReadingTime = false
   ShowShareButtons = false
   ShowPostNavLinks = true
