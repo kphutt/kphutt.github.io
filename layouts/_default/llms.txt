@@ -47,7 +47,7 @@ This is the personal site of {{ site.Params.author }}{{ with site.Params.schema.
 
 ## Explorables
 
-- [Explorables](https://explorables.kphutt.com/): interactive pages he made, on their own site
+- [Explorables](https://explorables.kphutt.com/): interactive explainers he made that you can play with, starting with a backup-power storm test
 
 ## Home
 

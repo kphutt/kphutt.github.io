@@ -39,13 +39,12 @@ I kept getting a flat list of findings from AI review passes where "the thesis i
 
 | Project | What it is |
 |---|---|
+| [Explorables](https://explorables.kphutt.com/) | Interactive explainers you can play with, starting with a backup-power storm test |
 | [gdmutant](https://github.com/kphutt/gdmutant) | Mutation testing for GDScript and Godot: find the bugs your green tests would miss |
 | [Prompt Lenses](https://github.com/kphutt/prompt-lenses) | Review any document or code from a specific cognitive perspective |
 | [Inbox Shepherd](https://github.com/kphutt/inbox-shepherd) | Tame a noisy inbox by classifying email the way you would if you had time |
 | [Identity Lab](https://github.com/kphutt/identity-lab) | Learn identity protocols by running them, not reading about them |
 | [Text Adventure](https://github.com/kphutt/text-adventure-v2) | A dungeon crawler in Go, because not everything has to be serious |
-
-Interactive pages that go with posts on this site live at [explorables.kphutt.com](https://explorables.kphutt.com/).
 
 ---
 
