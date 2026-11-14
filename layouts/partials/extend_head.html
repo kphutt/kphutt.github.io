@@ -45,3 +45,14 @@
 <link rel="alternate" type="application/rss+xml" href="{{ .Permalink }}" title="{{ site.Title }}">
 {{- end }}
 {{- end }}
+{{- /*
+  Mastodon profile verification. Mastodon marks a profile link as verified when the page it
+  points at links back to the profile with rel="me". One rel="me" link per profile in
+  params.schema.sameAs (hugo.toml), so there is a single list and nothing to keep in step.
+  rel="me" to every profile is valid and harmless. A plain link, not a script, and nothing
+  loads it, so the CSP is unchanged. scripts/check_build.py checks the home page has one for
+  every entry.
+*/ -}}
+{{- range site.Params.schema.sameAs }}
+<link rel="me" href="{{ . }}">
+{{- end }}
