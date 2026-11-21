@@ -25,7 +25,7 @@ terraform {
     # DNS: the zone's production records (dns.tf, imported) and the test name's (test-domain.tf).
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 5.28.0"
+      version = "~> 5.29.0"
     }
   }
 
